@@ -6,8 +6,10 @@ import org.bcnlab.beaconLabsBW.arena.model.GeneratorData;
 import org.bcnlab.beaconLabsBW.arena.model.SerializableLocation;
 import org.bcnlab.beaconLabsBW.arena.model.TeamData;
 import org.bcnlab.beaconLabsBW.game.Game;
+import org.bcnlab.beaconLabsBW.game.GameState;
 import org.bcnlab.beaconLabsBW.generator.GeneratorType;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.command.Command;
@@ -21,6 +23,8 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -66,10 +70,22 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
             case "removegenerator" -> handleRemoveGenerator(player, args);
             case "save" -> handleSave(player);
             case "join" -> handleJoin(player, args);
-            case "leave" -> handleLeave(player);            case "start" -> handleStart(player, args);
-            case "stop" -> handleStop(player, args);
-            case "shop" -> handleShop(player);
+            case "leave" -> handleLeave(player);
+            case "start" -> handleStart(player, args);
+            case "stop" -> handleStop(player, args);            case "shop" -> handleShop(player);
             case "upgrades" -> handleUpgrades(player);
+            case "forceteam" -> {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThis command is now available as &e/forceteam");
+                return true;
+            }
+            case "forcemap" -> {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThis command is now available as &e/forcemap");
+                return true;
+            }
+            case "forcestart" -> {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThis command is now available as &e/forcestart");
+                return true;
+            }
             default -> {
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cUnknown command. Use &e/bw help &cfor a list of commands.");
                 return true;
@@ -94,9 +110,10 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
             MessageUtils.sendMessage(player, "&e/bw addteam <name> <color> &7- Add a team");
             MessageUtils.sendMessage(player, "&e/bw addgenerator <type> [team] &7- Add a generator");
             MessageUtils.sendMessage(player, "&e/bw removegenerator &7- Remove nearest generator");
-            MessageUtils.sendMessage(player, "&e/bw save &7- Save arena changes");
-            MessageUtils.sendMessage(player, "&e/bw start <arena> &7- Force start a game");
-            MessageUtils.sendMessage(player, "&e/bw stop <arena> &7- Force stop a game");
+            MessageUtils.sendMessage(player, "&e/bw save &7- Save arena changes");            MessageUtils.sendMessage(player, "&e/bw start <arena> &7- Force start a game");
+            MessageUtils.sendMessage(player, "&e/bw stop <arena> &7- Force stop a game");            MessageUtils.sendMessage(player, "&e/forceteam [player] <team> &7- Force player onto team");
+            MessageUtils.sendMessage(player, "&e/forcemap <arena> &7- Change map of waiting lobby");
+            MessageUtils.sendMessage(player, "&e/forcestart &7- Reduce countdown to 3 seconds");
         }
         
         MessageUtils.sendMessage(player, "&e/bw join [arena] &7- Join a game");
@@ -629,21 +646,24 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
             }
         }
     }
-    
-    private void handleJoin(Player player, String[] args) {
+      private void handleJoin(Player player, String[] args) {
         if (!player.hasPermission("bedwars.play")) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have permission to play BedWars.");
             return;
         }
         
         // Check if player is already in a game
-        if (plugin.getGameManager().getPlayerGame(player) != null) {
+        Game existingGame = plugin.getGameManager().getPlayerGame(player);
+        if (existingGame != null) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou are already in a game! Use /bw leave first.");
             return;
         }
         
-        // If arena specified, try to join that one
-        if (args.length > 1) {
+        // Check if there's a waiting lobby already
+        Game waitingLobby = plugin.getGameManager().getWaitingLobby();
+        
+        // If arena specified and no waiting lobby exists, try to join that specific arena
+        if (args.length > 1 && waitingLobby == null && !plugin.getGameManager().haveRunningGames()) {
             String arenaName = args[1];
             Arena arena = plugin.getArenaManager().getArena(arenaName);
             
@@ -652,17 +672,17 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
                 return;
             }
             
-            // Check if game is running for this arena
-            Game game = plugin.getGameManager().getActiveGames().get(arenaName.toLowerCase());
+            if (!arena.isConfigured()) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cArena &e" + arenaName + " &cis not fully configured.");
+                return;
+            }
+            
+            // Start new game with this arena
+            Game game = plugin.getGameManager().startGame(arena);
             
             if (game == null) {
-                // Start new game
-                game = plugin.getGameManager().startGame(arena);
-                
-                if (game == null) {
-                    MessageUtils.sendMessage(player, plugin.getPrefix() + "&cFailed to start game. Arena might not be fully configured.");
-                    return;
-                }
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cFailed to start game. Arena might have issues.");
+                return;
             }
             
             // Join the game
@@ -670,6 +690,19 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&aJoined game &e" + arena.getName());
             } else {
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cCouldn't join game. It might be full or already started.");
+            }
+        } else if (waitingLobby != null || plugin.getGameManager().haveRunningGames()) {
+            // There's already a game running or waiting, tell the player they can't specify an arena
+            if (args.length > 1) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cCannot specify arena when a game is already active.");
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&7Use /bw join to join the current game.");
+            }
+            
+            // Try to join the existing game
+            if (plugin.getGameManager().joinGame(player)) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&aJoined a BedWars game!");
+            } else {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cCouldn't join game. It might be full, already started, or you were not previously in it.");
             }
         } else {
             // Find a suitable game
@@ -680,8 +713,7 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
             }
         }
     }
-    
-    private void handleLeave(Player player) {
+      private void handleLeave(Player player) {
         if (!player.hasPermission("bedwars.play")) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have permission to play BedWars.");
             return;
@@ -697,6 +729,10 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         // Leave the game
         plugin.getGameManager().removePlayerFromGame(player);
         MessageUtils.sendMessage(player, plugin.getPrefix() + "&aYou have left the game.");
+        
+        // Kick player from the server
+        player.kickPlayer(ChatColor.translateAlternateColorCodes('&', 
+            "&6&lBEDWARS\n&r\n&aYou have left the game\n&r\n&7Thanks for playing!"));
     }
     
     private void handleStart(Player player, String[] args) {
@@ -800,6 +836,202 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         plugin.getTeamUpgradeManager().openUpgradesMenu(player, game);
     }
     
+    /**
+     * Handle the forceteam command
+     * This command forces a player onto a specific team
+     * 
+     * @param player The player executing the command
+     * @param args The command arguments
+     */
+    private void handleForceTeam(Player player, String[] args) {
+        if (!player.hasPermission("bedwars.admin")) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have permission to force team assignments.");
+            return;
+        }
+        
+        // Check arguments
+        if (args.length < 2) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cUsage: /bw forceteam [player] <team>");
+            return;
+        }
+        
+        Player target;
+        String teamName;
+        
+        if (args.length >= 3) {
+            // Force another player
+            target = Bukkit.getPlayerExact(args[1]);
+            teamName = args[2];
+            
+            if (target == null) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cPlayer &e" + args[1] + " &cis not online.");
+                return;
+            }
+        } else {
+            // Force command executor
+            target = player;
+            teamName = args[1];
+        }
+        
+        // Check if target is in a game
+        Game game = plugin.getGameManager().getPlayerGame(target);
+        if (game == null) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThe target player is not in a game.");
+            return;
+        }
+        
+        // Check if the team exists in this game
+        if (!game.getArena().getTeams().containsKey(teamName)) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cTeam &e" + teamName + " &cdoesn't exist in this game.");
+            return;
+        }
+        
+        // Only allow team changes before game starts
+        if (game.getState() == GameState.RUNNING) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cCannot change teams after the game has started.");
+            return;
+        }
+        
+        // Remove from current team if any
+        String currentTeam = game.getPlayerTeam(target);
+        if (currentTeam != null) {
+            game.getTeams().get(currentTeam).remove(target.getUniqueId());
+        }
+        
+        // Add to new team
+        game.getPlayerTeams().put(target.getUniqueId(), teamName);
+        game.getTeams().computeIfAbsent(teamName, k -> ConcurrentHashMap.newKeySet()).add(target.getUniqueId());
+        
+        // Notify both players
+        MessageUtils.sendMessage(target, plugin.getPrefix() + "&aYou have been assigned to team &e" + teamName);
+        if (player != target) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&aAssigned &e" + target.getName() + " &ato team &e" + teamName);
+        }
+    }
+    
+    /**
+     * Handle the forcemap command
+     * This command switches the waiting lobby to a different arena
+     * 
+     * @param player The player executing the command
+     * @param args The command arguments
+     */
+    private void handleForceMap(Player player, String[] args) {
+        if (!player.hasPermission("bedwars.admin")) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have permission to force map changes.");
+            return;
+        }
+        
+        // Check arguments
+        if (args.length < 2) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cUsage: /bw forcemap <arena>");
+            return;
+        }
+        
+        String arenaName = args[1];
+        Arena arena = plugin.getArenaManager().getArena(arenaName);
+        
+        if (arena == null) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cArena &e" + arenaName + " &cdoesn't exist.");
+            return;
+        }
+        
+        if (!arena.isConfigured()) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cArena &e" + arenaName + " &cis not fully configured.");
+            return;
+        }
+        
+        // Check for an active waiting lobby
+        Game waitingLobby = plugin.getGameManager().getWaitingLobby();
+        if (waitingLobby == null || waitingLobby.getState() == GameState.RUNNING) {
+            // If there's no waiting lobby or the game is running, just set the next arena
+            plugin.getGameManager().setNextArena(arena);
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&aSet &e" + arena.getName() + " &aas the next arena.");
+            return;
+        }
+        
+        // If the waiting lobby is already on this arena, do nothing
+        if (waitingLobby.getArena().getName().equalsIgnoreCase(arena.getName())) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThe current lobby is already using arena &e" + arena.getName());
+            return;
+        }
+        
+        // Switch arenas - this requires stopping the current game and starting a new one
+        Set<UUID> currentPlayers = new HashSet<>(waitingLobby.getPlayers());
+        
+        // End the current game
+        plugin.getGameManager().endGame(waitingLobby);
+        
+        // Start a new game with the specified arena
+        Game newGame = plugin.getGameManager().startGame(arena);
+        
+        if (newGame == null) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cFailed to start new game with arena &e" + arena.getName());
+            return;
+        }
+        
+        // Transfer all players to the new game
+        for (UUID playerId : currentPlayers) {
+            Player gamePlayer = Bukkit.getPlayer(playerId);
+            if (gamePlayer != null && gamePlayer.isOnline()) {
+                plugin.getGameManager().addPlayerToGame(gamePlayer, newGame);
+            }
+        }
+        
+        // Broadcast map change
+        for (UUID playerId : newGame.getPlayers()) {
+            Player gamePlayer = Bukkit.getPlayer(playerId);
+            if (gamePlayer != null) {
+                MessageUtils.sendMessage(gamePlayer, plugin.getPrefix() + "&aThe map has been changed to &e" + arena.getName());
+            }
+        }
+        
+        MessageUtils.sendMessage(player, plugin.getPrefix() + "&aSuccessfully switched arena to &e" + arena.getName());
+    }
+    
+    /**
+     * Handle the forcestart command
+     * This command reduces the countdown timer to 3 seconds
+     * 
+     * @param player The player executing the command
+     */
+    private void handleForceStart(Player player) {
+        if (!player.hasPermission("bedwars.admin")) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have permission to force start games.");
+            return;
+        }
+        
+        // Check for an active waiting lobby
+        Game waitingLobby = plugin.getGameManager().getWaitingLobby();
+        if (waitingLobby == null) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThere is no waiting lobby to force start.");
+            return;
+        }
+        
+        if (waitingLobby.getState() == GameState.RUNNING) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThe game has already started.");
+            return;
+        }
+        
+        if (waitingLobby.getPlayers().size() < plugin.getConfigManager().getMinPlayers()) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cNot enough players to start the game.");
+            return;
+        }
+        
+        // Force the game to start by setting the countdown to 3 seconds
+        if (waitingLobby.getState() == GameState.STARTING) {
+            waitingLobby.setCountdown(3);
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&aForcing game to start in 3 seconds!");
+            waitingLobby.broadcastMessage("&a&lGame starting in &c3 &aseconds! &7(Force started by admin)");
+        } else if (waitingLobby.getState() == GameState.WAITING) {
+            // Start the countdown
+            waitingLobby.startCountdown();
+            waitingLobby.setCountdown(3);
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&aForcing game to start in 3 seconds!");
+            waitingLobby.broadcastMessage("&a&lGame starting in &c3 &aseconds! &7(Force started by admin)");
+        }
+    }
+    
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         List<String> completions = new ArrayList<>();
@@ -807,10 +1039,8 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             // First argument - subcommands
             String partial = args[0].toLowerCase();
-            
-            List<String> commands = new ArrayList<>();
-            if (sender.hasPermission("bedwars.admin")) {
-                commands.addAll(Arrays.asList(
+              List<String> commands = new ArrayList<>();
+            if (sender.hasPermission("bedwars.admin")) {                commands.addAll(Arrays.asList(
                     "help", "create", "delete", "list", "edit", "setspawn", "setbed", 
                     "setlobby", "setspectator", "addteam", "addgenerator", "removegenerator", 
                     "save", "start", "stop", "shop", "upgrades"
@@ -827,9 +1057,7 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         } else if (args.length == 2) {
             // Second argument - depends on first argument
             String subCommand = args[0].toLowerCase();
-            String partial = args[1].toLowerCase();
-            
-            switch (subCommand) {
+            String partial = args[1].toLowerCase();            switch (subCommand) {
                 case "edit", "delete", "join", "start", "stop" -> {
                     // Arena names
                     for (String arena : plugin.getArenaManager().getArenaNames()) {
@@ -858,13 +1086,12 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
                         }
                     }
                 }
-            }
-        } else if (args.length == 3) {
+            }        } else if (args.length == 3) {
             // Third argument - depends on first two arguments
             String subCommand = args[0].toLowerCase();
             String partial = args[2].toLowerCase();
             
-            switch (subCommand) {
+            switch (subCommand) {                // Removed forceteam case as it's now a standalone command
                 case "addteam" -> {
                     // Team colors
                     for (String color : Arrays.asList("RED", "BLUE", "GREEN", "YELLOW", "AQUA", "WHITE", "PINK", "GRAY")) {

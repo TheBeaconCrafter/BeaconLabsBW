@@ -11,6 +11,7 @@ import org.bukkit.entity.Player;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
 
 /**
  * Manages all BedWars games
@@ -120,8 +121,7 @@ public class GameManager {
         plugin.getLogger().info("Started new BedWars game with arena: " + arena.getName());
         return game;
     }
-    
-    /**
+      /**
      * End a BedWars game
      * 
      * @param game The game to end
@@ -135,6 +135,11 @@ public class GameManager {
         // Remove player mappings
         for (UUID playerId : game.getPlayers()) {
             playerGameMap.remove(playerId);
+        }
+        
+        // Clear waiting lobby reference if this was the waiting lobby
+        if (waitingLobby != null && waitingLobby.equals(game)) {
+            waitingLobby = null;
         }
         
         // Clean up the game
@@ -202,6 +207,9 @@ public class GameManager {
         playerGameMap.remove(player.getUniqueId());
         return true;
     }
+      // Keep track of the active waiting lobby
+    private Game waitingLobby = null;
+    private Arena nextArena = null;
     
     /**
      * Choose a game for a player to join
@@ -212,36 +220,40 @@ public class GameManager {
     public boolean joinGame(Player player) {
         if (player == null) return false;
         
-        // Check if player is already in a game
-        if (getPlayerGame(player) != null) {
+        // Check if player is already in a game (rejoin)
+        Game existingGame = getPlayerGame(player);
+        if (existingGame != null) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou are already in a game!");
             return false;
         }
         
-        // Find available games in lobby state
-        List<Game> availableGames = activeGames.values().stream()
-            .filter(g -> g.getState() == GameState.WAITING)
-            .filter(g -> g.getPlayers().size() < g.getArena().getMaxPlayers())
-            .toList();
-            
-        if (availableGames.isEmpty()) {
-            // No available games, try to start one
-            Set<String> arenaNames = plugin.getArenaManager().getArenaNames();
-            if (arenaNames.isEmpty()) {
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cNo arenas available!");
+        // Check if there's already a waiting lobby game
+        if (waitingLobby != null && waitingLobby.getState() == GameState.WAITING) {
+            // Join the existing waiting lobby if it has space
+            if (waitingLobby.getPlayers().size() < waitingLobby.getArena().getMaxPlayers()) {
+                return addPlayerToGame(player, waitingLobby);
+            } else {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThe waiting lobby is full!");
                 return false;
             }
-            
-            // Find a configured arena that isn't already in use
-            Arena arena = null;
-            for (String arenaName : arenaNames) {
-                Arena candidate = plugin.getArenaManager().getArena(arenaName);
-                if (candidate != null && candidate.isConfigured() && !activeGames.containsKey(arenaName.toLowerCase())) {
-                    arena = candidate;
-                    break;
-                }
+        } else if (waitingLobby != null && waitingLobby.getState() == GameState.STARTING) {
+            // Join the starting game if there's still space
+            if (waitingLobby.getPlayers().size() < waitingLobby.getArena().getMaxPlayers()) {
+                return addPlayerToGame(player, waitingLobby);
+            } else {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cThe game is starting and is full!");
+                return false;
             }
+        } else if (haveRunningGames()) {
+            // Don't allow new joins if there are running games unless it's a rejoin
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cA game is currently in progress. Please try again later.");
+            return false;
+        } else {
+            // No active waiting lobby, create a new one
+            waitingLobby = null; // Clear any old reference
             
+            // Choose an arena for the new game
+            Arena arena = chooseNextArena();
             if (arena == null) {
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cNo available arenas found!");
                 return false;
@@ -253,11 +265,73 @@ public class GameManager {
                 return false;
             }
             
+            waitingLobby = newGame;
             return addPlayerToGame(player, newGame);
-        } else {
-            // Join a random available game
-            Game game = availableGames.get(ThreadLocalRandom.current().nextInt(availableGames.size()));
-            return addPlayerToGame(player, game);
         }
+    }
+    
+    /**
+     * Check if there are any running games
+     * 
+     * @return true if there are running games, false otherwise
+     */
+    public boolean haveRunningGames() {
+        return activeGames.values().stream()
+            .anyMatch(game -> game.getState() == GameState.RUNNING);
+    }
+    
+    /**
+     * Choose the next arena to use
+     * 
+     * @return The selected arena
+     */
+    private Arena chooseNextArena() {
+        if (nextArena != null && nextArena.isConfigured() && 
+            !activeGames.containsKey(nextArena.getName().toLowerCase())) {
+            Arena selected = nextArena;
+            nextArena = null;
+            return selected;
+        }
+        
+        Set<String> arenaNames = plugin.getArenaManager().getArenaNames();
+        if (arenaNames.isEmpty()) {
+            return null;
+        }
+        
+        // Convert to list for random access
+        List<String> availableArenas = arenaNames.stream()
+            .filter(name -> {
+                Arena arena = plugin.getArenaManager().getArena(name);
+                return arena != null && arena.isConfigured() && 
+                    !activeGames.containsKey(name.toLowerCase());
+            })
+            .collect(Collectors.toList());
+        
+        if (availableArenas.isEmpty()) {
+            return null;
+        }
+        
+        // Choose a random arena
+        String randomArenaName = availableArenas.get(
+            ThreadLocalRandom.current().nextInt(availableArenas.size()));
+        return plugin.getArenaManager().getArena(randomArenaName);
+    }
+    
+    /**
+     * Set the next arena to be used
+     * 
+     * @param arena The arena to use next
+     */
+    public void setNextArena(Arena arena) {
+        nextArena = arena;
+    }
+    
+    /**
+     * Get the current waiting lobby
+     * 
+     * @return The waiting lobby game, or null if none
+     */
+    public Game getWaitingLobby() {
+        return waitingLobby;
     }
 }

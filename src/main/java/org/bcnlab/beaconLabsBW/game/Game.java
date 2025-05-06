@@ -206,9 +206,18 @@ public class Game {
     }
     
     /**
-     * Start the countdown to begin the game
+     * Set the countdown timer value
+     * 
+     * @param countdown The new countdown value in seconds
      */
-    private void startCountdown() {
+    public void setCountdown(int countdown) {
+        this.countdown = countdown;
+    }
+    
+    /**
+     * Start the countdown if it's not already started
+     */
+    public void startCountdown() {
         if (state != GameState.WAITING) return;
         
         state = GameState.STARTING;
@@ -919,9 +928,19 @@ public class Game {
         
         // Display game stats
         displayGameStats();
-        
-        // Schedule game cleanup
+          // Schedule game cleanup
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            // Kick all players from the server
+            for (UUID playerId : new ArrayList<>(players)) {
+                Player player = Bukkit.getPlayer(playerId);
+                if (player != null) {
+                    player.kickPlayer(ChatColor.translateAlternateColorCodes('&', 
+                        "&6&lBEDWARS\n&r\n" + 
+                        (winningTeam != null ? getTeamDisplayName(winningTeam) + " &6team wins!" : "&eIt's a draw!") +
+                        "\n&r\n&7Thanks for playing!"));
+                }
+            }
+            
             cleanup();
             plugin.getGameManager().endGame(this);
         }, 200L); // 10 seconds

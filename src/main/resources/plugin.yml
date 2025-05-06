@@ -27,3 +27,15 @@ commands:
     usage: '/labsbw <subcommand>'
     aliases: [ labsbedwars, bw ]
     permission: bedwars.play
+  forceteam:
+    description: 'Force a player onto a specific team'
+    usage: '/forceteam [player] <team>'
+    permission: bedwars.admin
+  forcemap:
+    description: 'Change map of waiting lobby'
+    usage: '/forcemap <arena>'
+    permission: bedwars.admin
+  forcestart:
+    description: 'Reduce countdown to 3 seconds'
+    usage: '/forcestart'
+    permission: bedwars.admin

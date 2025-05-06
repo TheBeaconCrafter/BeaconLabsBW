@@ -3,6 +3,9 @@ package org.bcnlab.beaconLabsBW;
 import lombok.Getter;
 import org.bcnlab.beaconLabsBW.arena.ArenaManager;
 import org.bcnlab.beaconLabsBW.command.BedwarsCommandHandler;
+import org.bcnlab.beaconLabsBW.command.ForceTeamCommand;
+import org.bcnlab.beaconLabsBW.command.ForceMapCommand;
+import org.bcnlab.beaconLabsBW.command.ForceStartCommand;
 import org.bcnlab.beaconLabsBW.config.ConfigManager;
 import org.bcnlab.beaconLabsBW.game.GameManager;
 import org.bcnlab.beaconLabsBW.generator.GeneratorManager;
@@ -45,8 +48,11 @@ public final class BeaconLabsBW extends JavaPlugin {
     private ShopManager shopManager;
     private TeamUpgradeManager teamUpgradeManager;
     
-    // Command handler
+    // Command handlers
     private BedwarsCommandHandler commandHandler;
+    private ForceTeamCommand forceTeamCommand;
+    private ForceMapCommand forceMapCommand;
+    private ForceStartCommand forceStartCommand;
 
     @Override
     public void onEnable() {
@@ -66,6 +72,19 @@ public final class BeaconLabsBW extends JavaPlugin {
         this.commandHandler = new BedwarsCommandHandler(this);
         getCommand("labsbw").setExecutor(commandHandler);
         getCommand("labsbw").setTabCompleter(commandHandler);
+        
+        // Register standalone admin commands
+        this.forceTeamCommand = new ForceTeamCommand(this);
+        getCommand("forceteam").setExecutor(forceTeamCommand);
+        getCommand("forceteam").setTabCompleter(forceTeamCommand);
+        
+        this.forceMapCommand = new ForceMapCommand(this);
+        getCommand("forcemap").setExecutor(forceMapCommand);
+        getCommand("forcemap").setTabCompleter(forceMapCommand);
+        
+        this.forceStartCommand = new ForceStartCommand(this);
+        getCommand("forcestart").setExecutor(forceStartCommand);
+        getCommand("forcestart").setTabCompleter(forceStartCommand);
         
         // Register event listeners
         registerListeners();
