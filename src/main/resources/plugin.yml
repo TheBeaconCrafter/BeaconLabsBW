@@ -1,0 +1,12 @@
+name: BeaconLabsBW
+version: '1.0.0'
+main: org.bcnlab.beaconLabsBW.BeaconLabsBW
+api-version: '1.21'
+load: STARTUP
+authors: [ Vincent Wackler ]
+website: bcnlab.org
+commands:
+  labsbw:
+    description: 'BeaconLabsBW plugin command'
+    usage: '/beaconlabsbw'
+    aliases: [ labsbedwars ]
