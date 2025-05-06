@@ -1304,8 +1304,7 @@ public class Game {
                 }
             }
         }
-    }
-      /**
+    }    /**
      * Place team beds at the start of the game
      */
     private void placeTeamBeds() {
@@ -1318,9 +1317,8 @@ public class Game {
             if (teamData != null && teamData.getBedLocation() != null) {
                 Location bedLocation = teamData.getBedLocation().toBukkitLocation();
                 if (bedLocation != null && bedLocation.getWorld() != null) {
-                    try {
-                        // Determine optimal direction based on surrounding blocks
-                        BlockFace direction = determineOptimalBedDirection(bedLocation);
+                    try {                        // Determine bed direction from the bed location's yaw
+                        BlockFace direction = yawToFace(bedLocation.getYaw());
                         
                         // Get the appropriate bed color for this team
                         Material bedMaterial = getTeamBedMaterial(teamData.getColor());
@@ -1328,6 +1326,15 @@ public class Game {
                         // Clear any blocks at the bed and foot locations first
                         Block bedBlock = bedLocation.getBlock();
                         Block footBlock = bedLocation.getBlock().getRelative(direction.getOppositeFace());
+                        
+                        // Check if the foot position is valid (not obstructed by solid blocks)
+                        // If it's not valid, fall back to the original method
+                        if (footBlock.getType().isSolid() && !footBlock.getType().toString().contains("BED")) {
+                            direction = determineOptimalBedDirection(bedLocation);
+                            footBlock = bedLocation.getBlock().getRelative(direction.getOppositeFace());
+                            plugin.getLogger().info("Using fallback bed direction for " + teamName + " team");
+                        }
+                        
                         bedBlock.setType(Material.AIR);
                         footBlock.setType(Material.AIR);
                         
@@ -1348,7 +1355,8 @@ public class Game {
                         footData.setFacing(direction);
                         footBlock.setBlockData(footData);
                         
-                        plugin.getLogger().info("Placed " + teamData.getColor() + " bed for team " + teamName);
+                        plugin.getLogger().info("Placed " + teamData.getColor() + " bed for team " + teamName + 
+                            " in direction " + direction + " (yaw: " + bedLocation.getYaw() + ")");
                     } catch (Exception e) {
                         plugin.getLogger().warning("Error placing bed for team " + teamName + ": " + e.getMessage());
                     }
@@ -1371,9 +1379,32 @@ public class Game {
             plugin.getLogger().info("Cleared all dropped items in arena " + arena.getName());
         }
     }
-    
+      /**
+     * Convert a yaw value to a BlockFace direction
+     *
+     * @param yaw The yaw value to convert
+     * @return The BlockFace corresponding to the yaw direction
+     */
+    private BlockFace yawToFace(float yaw) {
+        // Normalize yaw to be between 0 and 360
+        yaw = (yaw % 360);
+        if (yaw < 0) yaw += 360;
+        
+        // Convert yaw to BlockFace
+        if (yaw >= 315 || yaw < 45) {
+            return BlockFace.SOUTH; // Player facing south (yaw 0)
+        } else if (yaw >= 45 && yaw < 135) {
+            return BlockFace.WEST; // Player facing west (yaw 90)
+        } else if (yaw >= 135 && yaw < 225) {
+            return BlockFace.NORTH; // Player facing north (yaw 180)
+        } else { // yaw >= 225 && yaw < 315
+            return BlockFace.EAST; // Player facing east (yaw 270)
+        }
+    }
+
     /**
      * Determine the best direction for placing a bed based on surrounding blocks
+     * Used as a fallback if yaw-based placement doesn't work
      * 
      * @param location The location where the bed head will be placed
      * @return The BlockFace representing the optimal direction
