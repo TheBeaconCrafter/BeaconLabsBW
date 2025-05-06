@@ -9,11 +9,13 @@ import org.bcnlab.beaconLabsBW.game.GameState;
 import org.bcnlab.beaconLabsBW.shop.ShopItem;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitTask;
 import java.util.UUID;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,6 +27,8 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -166,22 +170,57 @@ public class PlayerListener implements Listener {
                             item.setAmount(item.getAmount() - 1);
                         } else {
                             player.getInventory().setItemInMainHand(null);
-                        }
-                        
-                        // Spawn an Iron Golem that follows the player
+                        }                        // Spawn an Iron Golem that follows the player
                         Location spawnLoc = player.getLocation();
-                        IronGolem golem = player.getWorld().spawn(spawnLoc, IronGolem.class);
+                        IronGolem golem = (IronGolem) player.getWorld().spawn(spawnLoc, IronGolem.class);
+                        golem.setCustomNameVisible(true);
+                        golem.setPersistent(false); // Don't persist after world unload
                         
                         // Set metadata for team identification
                         String team = game.getPlayerTeam(player);
                         if (team != null) {
                             // Use appropriate color for the team
                             String teamColor = game.getArena().getTeam(team).getColor();
-                            golem.setCustomName(teamColor + " Defender");
-                            golem.setCustomNameVisible(true);
+                            ChatColor chatColor = MessageUtils.getChatColorFromString(teamColor);
+                            
+                            golem.setCustomName(chatColor + "Dream Defender" + ChatColor.GRAY + " [2:00]");
                             golem.setMetadata("team", new FixedMetadataValue(plugin, team));
                             golem.setMetadata("owner", new FixedMetadataValue(plugin, player.getUniqueId().toString()));
+                            golem.setMetadata("game_id", new FixedMetadataValue(plugin, game.getGameId()));
+                            golem.setMetadata("spawn_time", new FixedMetadataValue(plugin, System.currentTimeMillis()));
                         }
+                        
+                        // Start timer task for despawning after 2 minutes
+                        final int[] timeLeft = {120}; // 120 seconds = 2 minutes
+                        final int taskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+                            // Check if golem still exists
+                            if (!golem.isValid() || golem.isDead()) {
+                                Bukkit.getScheduler().cancelTask(golem.getMetadata("timer_task").get(0).asInt());
+                                return;
+                            }
+                            
+                            timeLeft[0]--;
+                            
+                            if (timeLeft[0] <= 0) {
+                                // Time's up, remove the golem
+                                golem.remove();
+                                Bukkit.getScheduler().cancelTask(golem.getMetadata("timer_task").get(0).asInt());
+                                return;
+                            }
+                            
+                            // Update name to show time left
+                            int minutes = timeLeft[0] / 60;
+                            int seconds = timeLeft[0] % 60;
+                            String timeString = String.format("%d:%02d", minutes, seconds);
+                            
+                            String teamColor = game.getArena().getTeam(team).getColor();
+                            ChatColor chatColor = MessageUtils.getChatColorFromString(teamColor);
+                            golem.setCustomName(chatColor + "Dream Defender" + ChatColor.GRAY + " [" + timeString + "]");
+                            
+                        }, 20L, 20L).getTaskId(); // Run every second
+                        
+                        // Store task ID for cleanup
+                        golem.setMetadata("timer_task", new FixedMetadataValue(plugin, taskId));
                         
                         // Play spawn sound
                         player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_IRON_GOLEM_REPAIR, 1.0f, 1.0f);
@@ -254,30 +293,62 @@ public class PlayerListener implements Listener {
                Math.abs(loc1.getBlockY() - loc2.getBlockY()) <= 1 && 
                Math.abs(loc1.getBlockZ() - loc2.getBlockZ()) <= 1;
     }
-    
-    @EventHandler
+      @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
-        if (event.getView().getTitle().startsWith("§8BedWars Shop:")) {
-            // Handle shop interaction
-            event.setCancelled(true);
+        if (event.getWhoClicked() instanceof Player player) {
+            Game game = plugin.getGameManager().getPlayerGame(player);
             
-            if (event.getWhoClicked() instanceof Player player) {
+            if (event.getView().getTitle().startsWith("§8BedWars Shop:")) {
+                // Handle shop interaction
+                event.setCancelled(true);
                 plugin.getShopManager().handlePurchase(player, event.getRawSlot());
+                return;
+            }
+            
+            // Game-specific inventory protections
+            if (game != null && game.getState() == GameState.RUNNING) {
+                // Prevent armor removal
+                if (event.getSlotType() == InventoryType.SlotType.ARMOR) {
+                    event.setCancelled(true);
+                    return;
+                }
+                
+                // Prevent placing permanent tools in other inventories
+                if (event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY || 
+                    event.getAction() == InventoryAction.PLACE_ALL ||
+                    event.getAction() == InventoryAction.PLACE_ONE || 
+                    event.getAction() == InventoryAction.PLACE_SOME) {
+                    
+                    ItemStack currentItem = event.getCurrentItem();
+                    if (currentItem != null && (isArmor(currentItem.getType()) || isPermanentTool(currentItem))) {
+                        event.setCancelled(true);
+                        MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou cannot move permanent items!");
+                        return;
+                    }
+                }
             }
         }
     }
-    
-    @EventHandler
+      @EventHandler
     public void onPlayerDropItem(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
         Game game = plugin.getGameManager().getPlayerGame(player);
         
         if (game != null) {
-            // Don't allow dropping armor
             ItemStack item = event.getItemDrop().getItemStack();
+            
+            // Don't allow dropping armor
             if (isArmor(item.getType())) {
                 event.setCancelled(true);
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou cannot drop armor!");
+                return;
+            }
+            
+            // Don't allow dropping permanent tools
+            if (isPermanentTool(item)) {
+                event.setCancelled(true);
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou cannot drop permanent tools!");
+                return;
             }
         }
     }
@@ -287,6 +358,25 @@ public class PlayerListener implements Listener {
                material.name().contains("CHESTPLATE") ||
                material.name().contains("LEGGINGS") ||
                material.name().contains("BOOTS");
+    }
+    
+    /**
+     * Check if an item is a permanent tool
+     * 
+     * @param item The item to check
+     * @return true if permanent, false otherwise
+     */
+    private boolean isPermanentTool(ItemStack item) {
+        if (item == null || item.getType().isAir()) return false;
+        
+        Material type = item.getType();
+        return type == Material.SHEARS || 
+               type.name().contains("PICKAXE") ||
+               type.name().contains("AXE") ||
+               type == Material.WOODEN_SWORD ||
+               type == Material.STONE_SWORD ||
+               type == Material.IRON_SWORD ||
+               type == Material.DIAMOND_SWORD;
     }
     
     @EventHandler

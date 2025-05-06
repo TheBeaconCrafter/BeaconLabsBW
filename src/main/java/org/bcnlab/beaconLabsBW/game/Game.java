@@ -10,7 +10,10 @@ import org.bcnlab.beaconLabsBW.generator.ActiveGenerator;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.type.Bed;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageEvent;
@@ -28,9 +31,9 @@ import java.util.stream.Collectors;
  */
 @Getter
 public class Game {
-    
-    private final BeaconLabsBW plugin;
+      private final BeaconLabsBW plugin;
     private final Arena arena;
+    private final String gameId; // Unique identifier for this game instance
     
     private GameState state = GameState.WAITING;
     private final Set<UUID> players = ConcurrentHashMap.newKeySet();
@@ -55,8 +58,7 @@ public class Game {
     
     // Scoreboard manager
     private org.bcnlab.beaconLabsBW.utils.GameScoreboard scoreboardManager;
-    
-    /**
+      /**
      * Creates a new BedWars game
      *
      * @param plugin The plugin instance
@@ -67,6 +69,15 @@ public class Game {
         this.arena = arena;
         this.countdown = plugin.getConfigManager().getLobbyCountdown();
         this.gameTimer = plugin.getConfigManager().getGameTime();
+        this.gameId = "game_" + System.currentTimeMillis() + "_" + arena.getName();
+    }
+    
+    /**
+     * Get the game's unique ID
+     * @return The game ID
+     */
+    public String getGameId() {
+        return gameId;
     }
       /**
      * Set up the game arena
@@ -239,15 +250,24 @@ public class Game {
         
         state = GameState.WAITING;
         broadcastMessage("&cNot enough players! Countdown cancelled.");
-    }
-      /**
+    }    /**
      * Start the game
      */
     private void startGame() {
         if (state != GameState.STARTING) return;
         
         state = GameState.RUNNING;
-          // Assign players to teams
+        
+        // First clean up any leftover items and entities
+        clearArenaItems();
+          
+        // Clean up any Dream Defenders from previous games
+        cleanupDreamDefenders();
+        
+        // Place team beds for the game
+        placeTeamBeds();
+          
+        // Assign players to teams
         assignTeams();
         
         // Reset team upgrades
@@ -275,7 +295,9 @@ public class Game {
                     }
                 }
             }
-        }        // Start resource generators
+        }
+        
+        // Start resource generators
         startGenerators();
         
         // Update tab list with team colors
@@ -422,8 +444,7 @@ public class Game {
         player.getInventory().setLeggings(leggings);
         player.getInventory().setBoots(boots);
     }
-    
-    /**
+      /**
      * Give initial equipment to a player
      *
      * @param player The player
@@ -432,15 +453,7 @@ public class Game {
         // Wooden sword
         player.getInventory().addItem(new ItemStack(Material.WOODEN_SWORD));
         
-        // Some wool blocks matching team color
-        String teamName = playerTeams.get(player.getUniqueId());
-        if (teamName != null) {
-            TeamData teamData = arena.getTeam(teamName);
-            if (teamData != null) {
-                Material woolType = getTeamWoolMaterial(teamData.getColor());
-                player.getInventory().addItem(new ItemStack(woolType, 16));
-            }
-        }
+        // No more wool blocks at the start - players should buy them from the shop
     }
     
     /**
@@ -480,6 +493,34 @@ public class Game {
             case "PINK" -> Material.PINK_WOOL;
             case "GRAY" -> Material.GRAY_WOOL;
             default -> Material.WHITE_WOOL;
+        };
+    }
+    
+    /**
+     * Get the appropriate bed material for a team color
+     * 
+     * @param colorName The team color name
+     * @return The bed material
+     */
+    private Material getTeamBedMaterial(String colorName) {
+        return switch (colorName.toUpperCase()) {
+            case "RED" -> Material.RED_BED;
+            case "BLUE" -> Material.BLUE_BED;
+            case "GREEN" -> Material.GREEN_BED;
+            case "YELLOW" -> Material.YELLOW_BED;
+            case "AQUA", "LIGHT_BLUE" -> Material.LIGHT_BLUE_BED;
+            case "WHITE" -> Material.WHITE_BED;
+            case "PINK" -> Material.PINK_BED;
+            case "GRAY" -> Material.GRAY_BED;
+            case "BLACK" -> Material.BLACK_BED;
+            case "ORANGE" -> Material.ORANGE_BED;
+            case "PURPLE" -> Material.PURPLE_BED;
+            case "CYAN" -> Material.CYAN_BED;
+            case "BROWN" -> Material.BROWN_BED;
+            case "LIGHT_GRAY" -> Material.LIGHT_GRAY_BED;
+            case "LIME" -> Material.LIME_BED;
+            case "MAGENTA" -> Material.MAGENTA_BED;
+            default -> Material.RED_BED;
         };
     }
     
@@ -524,12 +565,14 @@ public class Game {
      * Reset a player's state
      *
      * @param player The player
-     */
-    private void resetPlayer(Player player) {
+     */    private void resetPlayer(Player player) {
         player.setHealth(20.0);
         player.setFoodLevel(20);
         player.setSaturation(20);
         player.getInventory().clear();
+        
+        // Clear enderchest contents
+        player.getEnderChest().clear();
         
         // Use survival mode for active players, spectator for spectators
         if (spectators.contains(player.getUniqueId())) {
@@ -962,13 +1005,28 @@ public class Game {
             block.setType(Material.AIR);
         }
         placedBlocks.clear();
-        
-        // Remove dropped items
+          // Remove dropped items and iron golems (Dream Defenders)
         World world = Bukkit.getWorld(arena.getWorldName());
         if (world != null) {
             for (Entity entity : world.getEntities()) {
                 if (entity instanceof Item) {
                     entity.remove();
+                }                // Remove all Dream Defenders (Iron Golems) in the game world
+                if (entity instanceof IronGolem) {
+                    // Check if it's from this game or just remove all golems for safety
+                    if (!entity.hasMetadata("game_id") || 
+                        (entity.hasMetadata("game_id") && gameId.equals(entity.getMetadata("game_id").get(0).asString()))) {
+                        // Cancel the timer task first if it exists
+                        if (entity.hasMetadata("timer_task")) {
+                            try {
+                                int taskId = entity.getMetadata("timer_task").get(0).asInt();
+                                Bukkit.getScheduler().cancelTask(taskId);
+                            } catch (Exception e) {
+                                // Ignore any errors with task cancellation
+                            }
+                        }
+                        entity.remove();
+                    }
                 }
             }
         }
@@ -992,11 +1050,8 @@ public class Game {
         playerTeams.clear();
         for (Set<UUID> teamPlayers : teams.values()) {
             teamPlayers.clear();
-        }
-          // Reset bed status for next game
-        for (String teamName : bedStatus.keySet()) {
-            bedStatus.put(teamName, true); // All beds are intact at start
-        }
+        }        // Place team beds for the next game
+        placeTeamBeds();
     }
     
     /**
@@ -1229,5 +1284,125 @@ public class Game {
      */
     public Set<UUID> getTeamMembers(String teamName) {
         return teams.getOrDefault(teamName, Collections.emptySet());
+    }
+    
+    /**
+     * Clean up any Dream Defenders in the game world
+     * This is used when starting a new game to remove any golems from previous games
+     */
+    private void cleanupDreamDefenders() {
+        World world = Bukkit.getWorld(arena.getWorldName());
+        if (world != null) {
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof IronGolem) {
+                    // Remove all Iron Golems in the game world
+                    if (entity.hasMetadata("timer_task")) {
+                        int taskId = entity.getMetadata("timer_task").get(0).asInt();
+                        Bukkit.getScheduler().cancelTask(taskId);
+                    }
+                    entity.remove();
+                }
+            }
+        }
+    }
+      /**
+     * Place team beds at the start of the game
+     */
+    private void placeTeamBeds() {
+        // Reset bed status for the game
+        for (String teamName : arena.getTeams().keySet()) {
+            bedStatus.put(teamName, true); // All beds are intact at start
+            
+            // Place the physical bed block
+            TeamData teamData = arena.getTeam(teamName);
+            if (teamData != null && teamData.getBedLocation() != null) {
+                Location bedLocation = teamData.getBedLocation().toBukkitLocation();
+                if (bedLocation != null && bedLocation.getWorld() != null) {
+                    try {
+                        // Determine optimal direction based on surrounding blocks
+                        BlockFace direction = determineOptimalBedDirection(bedLocation);
+                        
+                        // Get the appropriate bed color for this team
+                        Material bedMaterial = getTeamBedMaterial(teamData.getColor());
+                        
+                        // Clear any blocks at the bed and foot locations first
+                        Block bedBlock = bedLocation.getBlock();
+                        Block footBlock = bedLocation.getBlock().getRelative(direction.getOppositeFace());
+                        bedBlock.setType(Material.AIR);
+                        footBlock.setType(Material.AIR);
+                        
+                        // Place the bed block (head part)
+                        bedBlock.setType(bedMaterial);
+                        
+                        // Set the bed direction
+                        Bed bedData = (Bed) bedBlock.getBlockData();
+                        bedData.setPart(Bed.Part.HEAD);
+                        bedData.setFacing(direction);
+                        bedBlock.setBlockData(bedData);
+                        
+                        // Place the foot part in the correct direction
+                        footBlock.setType(bedMaterial);
+                        
+                        Bed footData = (Bed) footBlock.getBlockData();
+                        footData.setPart(Bed.Part.FOOT);
+                        footData.setFacing(direction);
+                        footBlock.setBlockData(footData);
+                        
+                        plugin.getLogger().info("Placed " + teamData.getColor() + " bed for team " + teamName);
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("Error placing bed for team " + teamName + ": " + e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Clear dropped items in the arena at game start
+     */
+    private void clearArenaItems() {
+        World world = Bukkit.getWorld(arena.getWorldName());
+        if (world != null) {
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof Item) {
+                    entity.remove();
+                }
+            }
+            plugin.getLogger().info("Cleared all dropped items in arena " + arena.getName());
+        }
+    }
+    
+    /**
+     * Determine the best direction for placing a bed based on surrounding blocks
+     * 
+     * @param location The location where the bed head will be placed
+     * @return The BlockFace representing the optimal direction
+     */
+    private BlockFace determineOptimalBedDirection(Location location) {
+        // Check if we have any solid blocks around to place bed against
+        Block block = location.getBlock();
+        
+        // Check all four horizontal directions
+        BlockFace[] directions = {BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST};
+        
+        // First look for walls to place bed against
+        for (BlockFace face : directions) {
+            Block relative = block.getRelative(face);
+            if (relative.getType().isSolid() && !relative.getType().toString().contains("BED")) {
+                // Return the opposite direction so the bed faces away from the wall
+                return face.getOppositeFace();
+            }
+        }
+        
+        // If no walls found, look for space for the foot part
+        for (BlockFace face : directions) {
+            Block footBlock = block.getRelative(face.getOppositeFace());
+            if (footBlock.getType().isAir() || footBlock.getType() == Material.CAVE_AIR) {
+                return face;
+            }
+        }
+        
+        // Default to NORTH if no better option found
+        return BlockFace.NORTH;
     }
 }

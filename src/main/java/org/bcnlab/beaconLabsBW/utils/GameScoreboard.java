@@ -29,8 +29,7 @@ public class GameScoreboard {
         this.plugin = plugin;
         this.game = game;
     }
-    
-    /**
+      /**
      * Set up the scoreboard for a player
      * 
      * @param player The player
@@ -49,9 +48,15 @@ public class GameScoreboard {
         // Apply scoreboard to player
         player.setScoreboard(scoreboard);
         playerScoreboards.put(player.getUniqueId(), scoreboard);
+        
+        // If we're in the lobby and haven't started the task yet, start it now
+        if ((game.getState() == org.bcnlab.beaconLabsBW.game.GameState.WAITING || 
+             game.getState() == org.bcnlab.beaconLabsBW.game.GameState.STARTING) && 
+            updateTask == null) {
+            startTask();
+        }
     }
-    
-    /**
+      /**
      * Update the scoreboard for a player
      * 
      * @param player The player
@@ -64,6 +69,71 @@ public class GameScoreboard {
             scoreboard.resetScores(entry);
         }
         
+        // Check game state and display appropriate scoreboard
+        if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.WAITING || 
+            game.getState() == org.bcnlab.beaconLabsBW.game.GameState.STARTING) {
+            // Display the lobby scoreboard
+            updateLobbyScoreboard(player, scoreboard, objective);
+        } else {
+            // Display the in-game scoreboard
+            updateInGameScoreboard(player, scoreboard, objective);
+        }
+    }
+    
+    /**
+     * Update the lobby scoreboard for a player
+     * 
+     * @param player The player
+     * @param scoreboard The player's scoreboard
+     * @param objective The objective
+     */
+    private void updateLobbyScoreboard(Player player, Scoreboard scoreboard, Objective objective) {
+        // Date display
+        SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yy");
+        String date = dateFormat.format(new Date());
+        
+        // Add new scores
+        int score = 15;
+        
+        // Header
+        objective.getScore(ChatColor.GRAY + date).setScore(score--);
+        objective.getScore(" ").setScore(score--);
+        
+        // Game info
+        objective.getScore(ChatColor.WHITE + "Map: " + ChatColor.GREEN + game.getArena().getName()).setScore(score--);
+        objective.getScore("  ").setScore(score--);
+        
+        // Player count
+        int minPlayers = plugin.getConfigManager().getMinPlayers();
+        String playersText = ChatColor.WHITE + "Players: " + ChatColor.GREEN + game.getPlayers().size() + 
+                ChatColor.GRAY + "/" + game.getArena().getMaxPlayers();
+        objective.getScore(playersText).setScore(score--);
+        
+        // Show countdown if game is starting
+        if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.STARTING) {
+            objective.getScore("   ").setScore(score--);
+            objective.getScore(ChatColor.WHITE + "Game starting in: " + 
+                    ChatColor.GREEN + game.getCountdown() + "s").setScore(score--);
+        } else {
+            objective.getScore("   ").setScore(score--);
+            objective.getScore(ChatColor.WHITE + "Waiting for " + 
+                    ChatColor.GREEN + Math.max(0, minPlayers - game.getPlayers().size()) + 
+                    ChatColor.WHITE + " more players").setScore(score--);
+        }
+        
+        // Show server IP
+        objective.getScore("    ").setScore(score--);
+        objective.getScore(ChatColor.YELLOW + "bcnlab.org").setScore(score);
+    }
+    
+    /**
+     * Update the in-game scoreboard for a player
+     * 
+     * @param player The player
+     * @param scoreboard The player's scoreboard
+     * @param objective The objective
+     */
+    private void updateInGameScoreboard(Player player, Scoreboard scoreboard, Objective objective) {
         // Date display
         SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yy");
         String date = dateFormat.format(new Date());
@@ -138,16 +208,20 @@ public class GameScoreboard {
             case "GRAY" -> ChatColor.GRAY.toString();
             default -> ChatColor.WHITE.toString();
         };
-    }
-      /**
+    }    /**
      * Start the scoreboard update task
      */
     public void startTask() {
-        // Set up health displays initially
-        setupPlayerHealthDisplays();
+        // Set up health displays if game is running
+        if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
+            setupPlayerHealthDisplays();
+        } else {
+            // Remove health displays if not in-game
+            removeHealthDisplays();
+        }
         
         updateTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            // Update individual scoreboards
+            // Force update all players' scoreboards to keep player counts current
             for (UUID playerId : game.getPlayers()) {
                 Player player = Bukkit.getPlayer(playerId);
                 Scoreboard scoreboard = playerScoreboards.get(playerId);
@@ -160,8 +234,13 @@ public class GameScoreboard {
                 }
             }
             
-            // Update player health displays
-            updatePlayerHealthDisplays();
+            // Only update health displays if in a running game
+            if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
+                updatePlayerHealthDisplays();
+            } else {
+                // Remove health displays if not in-game
+                removeHealthDisplays();
+            }
         }, 20L, 10L); // Update every half second for more responsive health display
     }
     
@@ -241,53 +320,79 @@ public class GameScoreboard {
                 scoreboardTeam.unregister();
             }
         }
-    }
-    
-    /**
+    }    /**
      * Set up the health display below players' names
      */
     public void setupPlayerHealthDisplays() {
+        // Only show health displays during actual gameplay, not in lobby
+        if (game.getState() != org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
+            removeHealthDisplays();
+            return;
+        }
+        
         ScoreboardManager manager = Bukkit.getScoreboardManager();
         if (manager == null) return;
         
-        // Set up health objective for all players in the game
-        Scoreboard mainScoreboard = manager.getMainScoreboard();
-        
-        // Remove any existing health objective first
-        Objective healthObj = mainScoreboard.getObjective("health");
-        if (healthObj != null) {
-            healthObj.unregister();
-        }
-          // Create new health objective using non-deprecated method
-        healthObj = mainScoreboard.registerNewObjective("health", Criteria.HEALTH, ChatColor.RED + "❤");
-        healthObj.setDisplaySlot(DisplaySlot.BELOW_NAME);
-        
-        // Set up health for all players in the game
-        for (UUID playerId : game.getPlayers()) {
-            Player player = Bukkit.getPlayer(playerId);
-            if (player != null) {
-                healthObj.getScore(player.getName()).setScore((int) Math.ceil(player.getHealth()));
+        try {
+            // Use main scoreboard for the health display since it's visible to all players
+            Scoreboard mainBoard = manager.getMainScoreboard();
+            
+            // First clean up any existing health objective to avoid conflicts
+            Objective existingObj = mainBoard.getObjective("bwhealth");
+            if (existingObj != null) {
+                existingObj.unregister();
             }
+            
+            // Create a new health objective that will automatically track players' health
+            Objective healthObj = mainBoard.registerNewObjective("bwhealth", Criteria.HEALTH, ChatColor.RED + "❤");
+            healthObj.setDisplaySlot(DisplaySlot.BELOW_NAME);
+            
+            // When using Criteria.HEALTH, Minecraft will automatically manage the scores based on player health
+            // No need to manually set or update any scores
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error setting up health displays: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+      /**
+     * Remove health display objectives
+     */
+    private void removeHealthDisplays() {
+        try {
+            ScoreboardManager manager = Bukkit.getScoreboardManager();
+            if (manager == null) return;
+            
+            Scoreboard mainBoard = manager.getMainScoreboard();
+            Objective healthObj = mainBoard.getObjective("bwhealth");
+            if (healthObj != null) {
+                healthObj.unregister();
+            }
+        } catch (Exception e) {
+            // Just log errors but don't crash
+            plugin.getLogger().warning("Error removing health display: " + e.getMessage());
         }
     }
     
     /**
      * Update player health displays
+     * This method is kept for compatibility, but doesn't need to do anything anymore
+     * as Minecraft automatically tracks health criteria
      */
     public void updatePlayerHealthDisplays() {
-        ScoreboardManager manager = Bukkit.getScoreboardManager();
-        if (manager == null) return;
-        
-        Scoreboard mainScoreboard = manager.getMainScoreboard();
-        Objective healthObj = mainScoreboard.getObjective("health");
-        
-        if (healthObj != null) {
-            for (UUID playerId : game.getPlayers()) {
-                Player player = Bukkit.getPlayer(playerId);
-                if (player != null) {
-                    healthObj.getScore(player.getName()).setScore((int) Math.ceil(player.getHealth()));
+        // Only ensure health display exists in a running game
+        if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
+            // Check if the health display objective still exists, recreate if needed
+            ScoreboardManager manager = Bukkit.getScoreboardManager();
+            if (manager != null) {
+                Scoreboard mainBoard = manager.getMainScoreboard();
+                if (mainBoard.getObjective("bwhealth") == null) {
+                    setupPlayerHealthDisplays();
                 }
             }
+        } else {
+            // Remove health display when not in a running game
+            removeHealthDisplays();
         }
+        // No need to manually update scores - Minecraft handles this automatically
     }
 }

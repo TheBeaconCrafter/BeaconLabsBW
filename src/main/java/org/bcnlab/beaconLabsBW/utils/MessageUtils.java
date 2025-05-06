@@ -57,4 +57,26 @@ public class MessageUtils {
             }
         }
     }
+    
+    /**
+     * Get ChatColor from color name string
+     * 
+     * @param colorName The color name string
+     * @return The ChatColor corresponding to the name
+     */
+    public static ChatColor getChatColorFromString(String colorName) {
+        if (colorName == null) return ChatColor.WHITE;
+        
+        return switch (colorName.toUpperCase()) {
+            case "RED" -> ChatColor.RED;
+            case "BLUE" -> ChatColor.BLUE;
+            case "GREEN" -> ChatColor.GREEN;
+            case "YELLOW" -> ChatColor.YELLOW;
+            case "AQUA" -> ChatColor.AQUA;
+            case "WHITE" -> ChatColor.WHITE;
+            case "PINK" -> ChatColor.LIGHT_PURPLE;
+            case "GRAY" -> ChatColor.GRAY;
+            default -> ChatColor.WHITE;
+        };
+    }
 }

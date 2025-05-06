@@ -3,6 +3,7 @@ package org.bcnlab.beaconLabsBW.listeners;
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
 import org.bcnlab.beaconLabsBW.game.Game;
 import org.bcnlab.beaconLabsBW.game.GameState;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
@@ -11,6 +12,7 @@ import org.bukkit.event.entity.*;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import java.util.UUID;
 
 /**
  * Handles entity-related events for BedWars
@@ -22,10 +24,20 @@ public class EntityListener implements Listener {
     public EntityListener(BeaconLabsBW plugin) {
         this.plugin = plugin;
     }
-    
-    @EventHandler
+      @EventHandler
     public void onEntitySpawn(EntitySpawnEvent event) {
         Entity entity = event.getEntity();
+        
+        // Prevent regular iron golems from spawning naturally in the world
+        if (entity instanceof IronGolem && !entity.hasMetadata("team")) {
+            // Only allow custom iron golems (Dream Defenders)
+            for (Game game : plugin.getGameManager().getActiveGames().values()) {
+                if (entity.getWorld().getName().equals(game.getArena().getWorldName())) {
+                    event.setCancelled(true);
+                    return;
+                }
+            }
+        }
         
         // Prevent natural mob spawning in game worlds
         if (entity instanceof Monster || entity instanceof Animals) {
@@ -154,6 +166,78 @@ public class EntityListener implements Listener {
                     event.setCancelled(true);
                 }
                 return;
+            }
+        }
+        
+        // Handle spawning iron golem (Dream Defender)
+        if (event.getEntity() instanceof IronGolem golem && event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.CUSTOM) {
+            // Golems are spawned with metadata, so check for it
+            if (golem.hasMetadata("team")) {
+                // Schedule a task to make the golem target enemies
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    makeGolemTargetEnemies(golem);
+                }, 10L); // Small delay to ensure metadata is properly set
+            }
+        }
+    }
+    
+    /**
+     * Make an Iron Golem actively search for enemies
+     * 
+     * @param golem The Iron Golem to update
+     */
+    private void makeGolemTargetEnemies(IronGolem golem) {
+        // Check if the golem has team metadata
+        if (!golem.hasMetadata("team")) return;
+        
+        String golemTeam = golem.getMetadata("team").get(0).asString();
+        
+        // Get all games to find which one this golem belongs to
+        for (Game game : plugin.getGameManager().getActiveGames().values()) {
+            if (golem.getWorld().getName().equals(game.getArena().getWorldName())) {
+                
+                // Schedule a repeating task to find targets
+                Bukkit.getScheduler().runTaskTimer(plugin, task -> {
+                    // If the golem is dead or removed, cancel task
+                    if (golem.isDead() || !golem.isValid()) {
+                        task.cancel();
+                        return;
+                    }
+                    
+                    // Look for the nearest enemy player if not already targeting someone
+                    if (golem.getTarget() == null) {
+                        Player nearestEnemy = null;
+                        double nearestDistance = 20.0; // Max target range
+                        
+                        // Look for nearby enemy players
+                        for (UUID playerId : game.getPlayers()) {
+                            Player otherPlayer = Bukkit.getPlayer(playerId);
+                            
+                            if (otherPlayer != null && otherPlayer.getWorld().equals(golem.getWorld()) && 
+                                !game.isSpectator(otherPlayer)) {
+                                
+                                String playerTeam = game.getPlayerTeam(otherPlayer);
+                                
+                                // If player is on a different team, consider them as a target
+                                if (playerTeam != null && !playerTeam.equals(golemTeam)) {
+                                    double distance = otherPlayer.getLocation().distance(golem.getLocation());
+                                    if (distance < nearestDistance) {
+                                        nearestEnemy = otherPlayer;
+                                        nearestDistance = distance;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Set the target if we found one
+                        if (nearestEnemy != null) {
+                            golem.setTarget(nearestEnemy);
+                        }
+                    }
+                }, 20L, 20L); // Check every second
+                
+                // We found the right game, no need to continue
+                break;
             }
         }
     }

@@ -301,19 +301,31 @@ public class ShopManager {
         if (!handlePermanentToolUpgrades(player, item)) {
             return;
         }
-        
-        // Remove the currency
+          // Remove the currency
         removeCurrency(player, item.getCurrency(), item.getCost());
         
-        // Give the item
-        ItemStack itemStack = new ItemStack(item.getMaterial(), item.getAmount());
+        // Determine item to give - handle team-colored wool
+        Material material = item.getMaterial();
+        if (material == Material.WHITE_WOOL) {
+            material = getTeamColoredWool(player);
+        }
+        
+        // Create item stack
+        ItemStack itemStack = new ItemStack(material, item.getAmount());
         
         // Apply item customizations
         customizeShopItem(itemStack, item);
-        
-        // Special handling for armor
+          // Special handling for armor
         if (isArmor(item.getMaterial())) {
-            equipArmor(player, itemStack);
+            // Get armorType for armor differentiation
+            String armorType = item.getMaterial().name();
+            
+            // Process armor upgrade based on tier
+            if (armorType.contains("CHAINMAIL") || armorType.contains("IRON") || armorType.contains("DIAMOND")) {
+                equipArmorUpgrade(player, itemStack, item.getName());
+            } else {
+                equipArmor(player, itemStack);
+            }
         } else {
             // Give item to inventory
             HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(itemStack);
@@ -485,8 +497,7 @@ public class ShopManager {
                material.name().contains("LEGGINGS") ||
                material.name().contains("BOOTS");
     }
-    
-    /**
+      /**
      * Equip armor on a player
      * 
      * @param player The player
@@ -495,14 +506,104 @@ public class ShopManager {
     private void equipArmor(Player player, ItemStack armor) {
         Material type = armor.getType();
         
+        // For armor upgrades, only replace leggings and boots, not helmet or chestplate
+        // If the player doesn't have a helmet/chestplate yet, we'll equip those too
         if (type.name().contains("HELMET")) {
-            player.getInventory().setHelmet(armor);
+            if (player.getInventory().getHelmet() == null) {
+                player.getInventory().setHelmet(armor);
+            }
         } else if (type.name().contains("CHESTPLATE")) {
-            player.getInventory().setChestplate(armor);
+            if (player.getInventory().getChestplate() == null) {
+                player.getInventory().setChestplate(armor);
+            }
         } else if (type.name().contains("LEGGINGS")) {
             player.getInventory().setLeggings(armor);
         } else if (type.name().contains("BOOTS")) {
             player.getInventory().setBoots(armor);
+        }
+    }
+    
+    /**
+     * Handle armor upgrades for players - specifically creating appropriate items for each armor slot
+     * 
+     * @param player The player to upgrade armor for
+     * @param chestplate The chestplate item that was purchased (used to determine armor tier)
+     * @param armorName The name of the armor set
+     */
+    private void equipArmorUpgrade(Player player, ItemStack chestplate, String armorName) {
+        // Determine material type based on the chestplate
+        String matName = chestplate.getType().name();
+        Material legMaterial = null;
+        Material bootMaterial = null;
+        
+        if (matName.contains("CHAINMAIL")) {
+            legMaterial = Material.CHAINMAIL_LEGGINGS;
+            bootMaterial = Material.CHAINMAIL_BOOTS;
+        } else if (matName.contains("IRON")) {
+            legMaterial = Material.IRON_LEGGINGS;
+            bootMaterial = Material.IRON_BOOTS;
+        } else if (matName.contains("DIAMOND")) {
+            legMaterial = Material.DIAMOND_LEGGINGS;
+            bootMaterial = Material.DIAMOND_BOOTS;
+        } else {
+            // Fallback in case of unexpected material
+            equipArmor(player, chestplate);
+            return;
+        }
+        
+        // Create leggings and boots with the same properties
+        ItemStack leggings = new ItemStack(legMaterial);
+        ItemStack boots = new ItemStack(bootMaterial);
+        
+        // Copy meta data from chestplate if any
+        if (chestplate.hasItemMeta()) {
+            ItemMeta baseMeta = chestplate.getItemMeta();
+            
+            // Set up leggings
+            ItemMeta legMeta = leggings.getItemMeta();
+            if (legMeta != null && baseMeta != null) {
+                if (baseMeta.hasDisplayName()) {
+                    legMeta.setDisplayName(baseMeta.getDisplayName());
+                }
+                legMeta.setUnbreakable(true);
+                legMeta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+                leggings.setItemMeta(legMeta);
+            }
+            
+            // Set up boots
+            ItemMeta bootMeta = boots.getItemMeta();
+            if (bootMeta != null && baseMeta != null) {
+                if (baseMeta.hasDisplayName()) {
+                    bootMeta.setDisplayName(baseMeta.getDisplayName());
+                }
+                bootMeta.setUnbreakable(true);
+                bootMeta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+                boots.setItemMeta(bootMeta);
+            }
+        } else {
+            // Make sure they're unbreakable even without existing metadata
+            ItemMeta legMeta = leggings.getItemMeta();
+            if (legMeta != null) {
+                legMeta.setUnbreakable(true);
+                legMeta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+                leggings.setItemMeta(legMeta);
+            }
+            
+            ItemMeta bootMeta = boots.getItemMeta();
+            if (bootMeta != null) {
+                bootMeta.setUnbreakable(true);
+                bootMeta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+                boots.setItemMeta(bootMeta);
+            }
+        }
+        
+        // Apply to player - only upgrade leggings and boots, player keeps their helmet and chestplate
+        player.getInventory().setLeggings(leggings);
+        player.getInventory().setBoots(boots);
+        
+        // Give player the chestplate if they don't have one already
+        if (player.getInventory().getChestplate() == null) {
+            player.getInventory().setChestplate(chestplate);
         }
     }
     
@@ -540,5 +641,43 @@ public class ShopManager {
             }
         }
         return true;
+    }
+    
+    /**
+     * Get team-colored wool based on player's team
+     * 
+     * @param player The player
+     * @return Material for the team's wool color, or WHITE_WOOL if no team
+     */
+    private Material getTeamColoredWool(Player player) {
+        // Find the player's game
+        org.bcnlab.beaconLabsBW.game.Game game = plugin.getGameManager().getPlayerGame(player);
+        
+        if (game != null) {
+            // Get the player's team
+            String teamName = game.getPlayerTeam(player);
+            
+            if (teamName != null) {
+                // Get the team data
+                org.bcnlab.beaconLabsBW.arena.model.TeamData teamData = game.getArena().getTeam(teamName);
+                
+                if (teamData != null) {
+                    // Convert team color to wool material
+                    return switch (teamData.getColor().toUpperCase()) {
+                        case "RED" -> Material.RED_WOOL;
+                        case "BLUE" -> Material.BLUE_WOOL;
+                        case "GREEN" -> Material.GREEN_WOOL;
+                        case "YELLOW" -> Material.YELLOW_WOOL;
+                        case "AQUA" -> Material.LIGHT_BLUE_WOOL;
+                        case "WHITE" -> Material.WHITE_WOOL;
+                        case "PINK" -> Material.PINK_WOOL;
+                        case "GRAY" -> Material.GRAY_WOOL;
+                        default -> Material.WHITE_WOOL;
+                    };
+                }
+            }
+        }
+        
+        return Material.WHITE_WOOL;
     }
 }

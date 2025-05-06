@@ -14,6 +14,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.inventory.ItemStack;
 
 /**
  * Handles block-related events for BedWars
@@ -65,11 +66,19 @@ public class BlockListener implements Listener {
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only place blocks during the game!");
                 return;
             }
-            
-            // Special handling for TNT - instant ignition
+              // Special handling for TNT - instant ignition
             if (block.getType() == Material.TNT) {
                 event.setCancelled(true); // Cancel the placement
                 block.setType(Material.AIR); // Make sure the block is not placed
+                
+                // Remove one TNT from the player's hand
+                ItemStack heldItem = event.getItemInHand();
+                if (heldItem.getAmount() > 1) {
+                    heldItem.setAmount(heldItem.getAmount() - 1);
+                    player.getInventory().setItemInMainHand(heldItem);
+                } else {
+                    player.getInventory().setItemInMainHand(null);
+                }
                 
                 // Spawn primed TNT instead
                 TNTPrimed tnt = player.getWorld().spawn(block.getLocation().add(0.5, 0.0, 0.5), TNTPrimed.class);
