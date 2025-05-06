@@ -5,8 +5,25 @@ api-version: '1.21'
 load: STARTUP
 authors: [ Vincent Wackler ]
 website: bcnlab.org
+permissions:
+  bedwars.admin:
+    description: Gives access to all BedWars admin commands
+    default: op
+  bedwars.edit:
+    description: Allows editing arenas
+    default: op
+  bedwars.create:
+    description: Allows creating new arenas
+    default: op
+  bedwars.delete:
+    description: Allows deleting arenas
+    default: op
+  bedwars.play:
+    description: Allows playing BedWars
+    default: true
 commands:
   labsbw:
-    description: 'BeaconLabsBW plugin command'
-    usage: '/beaconlabsbw'
-    aliases: [ labsbedwars ]
+    description: 'Main BeaconLabsBW plugin command'
+    usage: '/labsbw <subcommand>'
+    aliases: [ labsbedwars, bw ]
+    permission: bedwars.play

@@ -1,0 +1,60 @@
+package org.bcnlab.beaconLabsBW.utils;
+
+import org.bukkit.ChatColor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+
+/**
+ * Utility class for handling messages and color codes
+ */
+public class MessageUtils {
+
+    /**
+     * Translate color codes in a message
+     * 
+     * @param message The message with color codes
+     * @return The colored message
+     */
+    public static String colorize(String message) {
+        if (message == null) return "";
+        return ChatColor.translateAlternateColorCodes('&', message);
+    }
+    
+    /**
+     * Send a colored message to a player
+     * 
+     * @param player The player to send the message to
+     * @param message The message to send
+     */
+    public static void sendMessage(Player player, String message) {
+        if (player == null || message == null) return;
+        player.sendMessage(colorize(message));
+    }
+    
+    /**
+     * Send a colored message to a command sender
+     * 
+     * @param sender The command sender to send the message to
+     * @param message The message to send
+     */
+    public static void sendMessage(CommandSender sender, String message) {
+        if (sender == null || message == null) return;
+        sender.sendMessage(colorize(message));
+    }
+    
+    /**
+     * Send a colored message to a collection of players by UUID
+     * 
+     * @param playerIds Collection of player UUIDs
+     * @param message The message to send
+     */
+    public static void sendMessage(java.util.Set<java.util.UUID> playerIds, String message) {
+        if (playerIds == null || message == null) return;
+        for (java.util.UUID playerId : playerIds) {
+            Player player = org.bukkit.Bukkit.getPlayer(playerId);
+            if (player != null) {
+                sendMessage(player, message);
+            }
+        }
+    }
+}
