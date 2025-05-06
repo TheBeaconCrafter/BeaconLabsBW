@@ -15,7 +15,8 @@ public enum ShopCategory {
     TOOLS("Tools", Material.STONE_PICKAXE),
     RANGED("Ranged", Material.BOW),
     POTIONS("Potions", Material.BREWING_STAND),
-    UTILITY("Utility", Material.TNT);
+    UTILITY("Utility", Material.TNT),
+    ULTIMATES("Ultimates", Material.BEACON);
     
     private final String displayName;
     private final Material icon;

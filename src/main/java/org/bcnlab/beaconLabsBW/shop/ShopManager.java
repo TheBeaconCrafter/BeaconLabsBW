@@ -33,8 +33,7 @@ public class ShopManager {
         // Register shop items
         registerItems();
     }
-    
-    /**
+      /**
      * Register all available shop items
      */
     private void registerItems() {
@@ -45,6 +44,22 @@ public class ShopManager {
         addItem(ShopCategory.QUICK_BUY, new ShopItem("Bow", Material.BOW, 1, Material.GOLD_INGOT, 12, "Bow"));
         addItem(ShopCategory.QUICK_BUY, new ShopItem("Arrows", Material.ARROW, 8, Material.GOLD_INGOT, 2, "8 arrows"));
         addItem(ShopCategory.QUICK_BUY, new ShopItem("Speed Potion", Material.POTION, 1, Material.EMERALD, 1, "Speed II (45 seconds)"));
+        
+        // Ultimates category
+        addItem(ShopCategory.ULTIMATES, new UltimateShopItem("Swordsman", Material.IRON_SWORD, org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.SWORDSMAN, 
+            "Dash forward and damage enemies"));
+        addItem(ShopCategory.ULTIMATES, new UltimateShopItem("Healer", Material.GOLDEN_APPLE, org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.HEALER,
+            "Provides healing to teammates in a small radius"));
+        addItem(ShopCategory.ULTIMATES, new UltimateShopItem("Frozo", Material.PACKED_ICE, org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.FROZO,
+            "Slow enemies down in a small radius"));
+        addItem(ShopCategory.ULTIMATES, new UltimateShopItem("Builder", Material.BRICKS, org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.BUILDER,
+            "Fast bridging and passive wool generation"));
+        addItem(ShopCategory.ULTIMATES, new UltimateShopItem("Gatherer", Material.EMERALD, org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.GATHERER,
+            "Chance to duplicate resources and portable ender chest"));
+        addItem(ShopCategory.ULTIMATES, new UltimateShopItem("Demolition", Material.TNT, org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.DEMOLITION,
+            "Burn connected wool and drop TNT on death"));
+        addItem(ShopCategory.ULTIMATES, new UltimateShopItem("Kangaroo", Material.RABBIT_FOOT, org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.KANGAROO,
+            "Double jump and save resources upon death"));
         
         // Blocks category
         addItem(ShopCategory.BLOCKS, new ShopItem("Wool", Material.WHITE_WOOL, 16, Material.IRON_INGOT, 4, "16 wool blocks"));
@@ -276,14 +291,18 @@ public class ShopManager {
         }
         
         return false;
-    }
-      /**
+    }    /**
      * Process a shop purchase
      * 
      * @param player The player
      * @param item The item being purchased
-     */
-    private void processPurchase(Player player, ShopItem item) {
+     */    private void processPurchase(Player player, ShopItem item) {
+        // Check if this is an ultimate class selection
+        if (item instanceof UltimateShopItem ultimateItem) {
+            UltimateClassHandler.handleUltimateSelection(player, ultimateItem, plugin);
+            return;
+        }
+        
         // Check if player has enough currency
         if (!hasCurrency(player, item.getCurrency(), item.getCost())) {
             String currencyName = getCurrencyName(item.getCurrency());

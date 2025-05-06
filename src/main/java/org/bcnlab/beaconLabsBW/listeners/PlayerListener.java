@@ -45,23 +45,19 @@ public class PlayerListener implements Listener {
     public PlayerListener(BeaconLabsBW plugin) {
         this.plugin = plugin;
     }
-    
-    @EventHandler
+      @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         
-        // Check if there's an auto-start game running
-        if (plugin.getConfigManager().isAutoStartEnabled()) {
-            for (Game game : plugin.getGameManager().getActiveGames().values()) {
-                if (game.getState() == GameState.WAITING || game.getState() == GameState.STARTING) {
-                    // Auto join the player after a short delay
-                    plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                        plugin.getGameManager().addPlayerToGame(player, game);
-                    }, 10L);
-                    break;
-                }
+        // Always try to join the player to a game automatically after a short delay
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            // Check if player is already in a game (maybe rejoined)
+            Game existingGame = plugin.getGameManager().getPlayerGame(player);
+            if (existingGame == null) {
+                // Not in a game, try to join one
+                plugin.getGameManager().joinGame(player);
             }
-        }
+        }, 10L);
     }
     
     @EventHandler

@@ -3,6 +3,7 @@ package org.bcnlab.beaconLabsBW.game;
 import lombok.Getter;
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
 import org.bcnlab.beaconLabsBW.arena.model.Arena;
+import org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass;
 import org.bcnlab.beaconLabsBW.arena.model.GeneratorData;
 import org.bcnlab.beaconLabsBW.arena.model.SerializableLocation;
 import org.bcnlab.beaconLabsBW.arena.model.TeamData;
@@ -19,6 +20,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -34,12 +36,15 @@ public class Game {
       private final BeaconLabsBW plugin;
     private final Arena arena;
     private final String gameId; // Unique identifier for this game instance
-    
-    private GameState state = GameState.WAITING;
+      private GameState state = GameState.WAITING;
     private final Set<UUID> players = ConcurrentHashMap.newKeySet();
     private final Map<UUID, String> playerTeams = new ConcurrentHashMap<>();
     private final Map<String, Set<UUID>> teams = new ConcurrentHashMap<>();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
+    
+    // Game mode
+    private GameMode gameMode = GameMode.NORMAL;
+    private final Map<UUID, UltimateClass> playerUltimateClasses = new ConcurrentHashMap<>();
     
     // Game state tracking
     private final Map<String, Boolean> bedStatus = new ConcurrentHashMap<>();
@@ -301,6 +306,11 @@ public class Game {
                         
                         // Initial equipment
                         giveInitialEquipment(player);
+                        
+                        // Give ultimates items if in ultimates mode
+                        if (gameMode == GameMode.ULTIMATES) {
+                            giveUltimateItems(player);
+                        }
                     }
                 }
             }
@@ -583,11 +593,20 @@ public class Game {
         // Clear enderchest contents
         player.getEnderChest().clear();
         
+        // Clear potion effects
+        for (PotionEffect effect : player.getActivePotionEffects()) {
+            player.removePotionEffect(effect.getType());
+        }
+        
+        // Disable flight (for Kangaroo ultimate)
+        player.setAllowFlight(false);
+        player.setFlying(false);
+        
         // Use survival mode for active players, spectator for spectators
         if (spectators.contains(player.getUniqueId())) {
-            player.setGameMode(GameMode.SPECTATOR);
+            player.setGameMode(org.bukkit.GameMode.SPECTATOR);
         } else {
-            player.setGameMode(GameMode.SURVIVAL);
+            player.setGameMode(org.bukkit.GameMode.SURVIVAL);
         }
     }
       /**
@@ -616,9 +635,13 @@ public class Game {
         // Get their team
         String team = playerTeams.get(player.getUniqueId());
         if (team == null) return;
-        
-        // Drop their resources
+          // Drop their resources
         dropPlayerResources(player);
+        
+        // Handle ultimate abilities that trigger on death
+        if (gameMode == GameMode.ULTIMATES) {
+            handleUltimateOnDeath(player, killer);
+        }
         
         // Check if their bed is broken
         if (!bedStatus.getOrDefault(team, false)) {
@@ -632,7 +655,7 @@ public class Game {
             broadcastMessage("&e" + player.getName() + " &7will respawn in 5 seconds!");
             
             // Put player in spectator mode temporarily
-            player.setGameMode(GameMode.SPECTATOR);
+            player.setGameMode(org.bukkit.GameMode.SPECTATOR);
             
             // Schedule respawn
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -692,7 +715,7 @@ public class Game {
         
         // Reset and set to spectator mode
         player.getInventory().clear();
-        player.setGameMode(GameMode.SPECTATOR);
+        player.setGameMode(org.bukkit.GameMode.SPECTATOR);
         
         // Teleport to spectator spawn
         SerializableLocation spectatorLoc = arena.getSpectatorSpawn();
@@ -729,12 +752,16 @@ public class Game {
                   // Give team armor and initial equipment
                 giveTeamArmor(player, teamData);
                 giveInitialEquipment(player);
-                
-                // Apply team upgrades
+                  // Apply team upgrades
                 applyTeamUpgrades(player);
                 
                 // Restore permanent tools
                 restorePermanentItems(player, permanentItems);
+                
+                // Give ultimates items if in ultimates mode
+                if (gameMode == GameMode.ULTIMATES) {
+                    giveUltimateItems(player);
+                }
             }
         }
     }
@@ -922,7 +949,7 @@ public class Game {
         for (UUID playerId : new ArrayList<>(players)) {
             Player player = Bukkit.getPlayer(playerId);
             if (player != null) {
-                player.setGameMode(GameMode.SPECTATOR);
+                player.setGameMode(org.bukkit.GameMode.SPECTATOR);
             }
         }
         
@@ -1056,7 +1083,7 @@ public class Game {
             if (player != null) {
                 player.teleport(Bukkit.getWorlds().get(0).getSpawnLocation());
                 resetPlayer(player);
-                player.setGameMode(GameMode.SURVIVAL);
+                player.setGameMode(org.bukkit.GameMode.SURVIVAL);
             }
         }
           // Clean up scoreboard
@@ -1551,8 +1578,7 @@ public class Game {
      * 
      * @param location The location where the bed head will be placed
      * @return The BlockFace representing the optimal direction
-     */
-    private BlockFace determineOptimalBedDirection(Location location) {
+     */    private BlockFace determineOptimalBedDirection(Location location) {
         // Check if we have any solid blocks around to place bed against
         Block block = location.getBlock();
         
@@ -1578,5 +1604,124 @@ public class Game {
         
         // Default to NORTH if no better option found
         return BlockFace.NORTH;
+    }
+    
+    /**
+     * Set the game mode for this BedWars game
+     * 
+     * @param gameMode The game mode to set
+     */
+    public void setGameMode(GameMode gameMode) {
+        if (state == GameState.WAITING || state == GameState.STARTING) {
+            this.gameMode = gameMode;
+            broadcastMessage("&aGame mode has been set to &e" + gameMode.getDisplayName());
+        }
+    }
+    
+    /**
+     * Get the current game mode
+     * 
+     * @return Current game mode
+     */
+    public GameMode getGameMode() {
+        return gameMode;
+    }
+    
+    /**
+     * Set a player's ultimate class
+     * 
+     * @param playerId The player UUID
+     * @param ultimateClass The ultimate class to assign
+     */
+    public void setPlayerUltimateClass(UUID playerId, UltimateClass ultimateClass) {
+        if (gameMode == GameMode.ULTIMATES) {
+            playerUltimateClasses.put(playerId, ultimateClass);
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null) {
+                MessageUtils.sendMessage(player, "&aYou have selected the &e" + ultimateClass.getFormattedName() + " &aultimate class!");
+            }
+        }
+    }
+    
+    /**
+     * Get a player's ultimate class
+     * 
+     * @param playerId The player UUID
+     * @return The player's ultimate class, or null if not assigned
+     */
+    public UltimateClass getPlayerUltimateClass(UUID playerId) {
+        return playerUltimateClasses.get(playerId);
+    }
+    
+    /**
+     * Give ultimate ability items to a player based on their selected class
+     * 
+     * @param player The player to give items to
+     */
+    private void giveUltimateItems(Player player) {
+        // Check if player has selected an ultimate class
+        UltimateClass playerClass = getPlayerUltimateClass(player.getUniqueId());
+        
+        // If player hasn't chosen a class, give them a random one
+        if (playerClass == null) {
+            playerClass = UltimateClass.getRandomClass();
+            setPlayerUltimateClass(player.getUniqueId(), playerClass);
+            MessageUtils.sendMessage(player, "&eYou have been randomly assigned the " + playerClass.getFormattedName() + " &eclass!");
+        }
+        
+        // Create the ultimate ability item and give it to the player
+        ItemStack ultimateItem = plugin.getUltimatesManager().createUltimateItem(player, playerClass);
+        player.getInventory().addItem(ultimateItem);
+        
+        // Send instructions on how to use the ability
+        MessageUtils.sendMessage(player, "&b&lULTIMATE ABILITY: &eYou have the " + playerClass.getFormattedName() + " &eability!");
+        MessageUtils.sendMessage(player, "&e" + playerClass.getDescription());
+        
+        // Give additional items based on class
+        switch (playerClass) {
+            case BUILDER:
+                // Give builder a small amount of wool to start with
+                ItemStack wool = new ItemStack(getTeamWoolMaterial(playerTeams.get(player.getUniqueId())), 16);
+                player.getInventory().addItem(wool);
+                break;
+            case KANGAROO:
+                // Enable double-jump capability
+                player.setAllowFlight(true);
+                break;
+        }
+    }
+    
+    /**
+     * Handle ultimate abilities that trigger on player death
+     * 
+     * @param player The player who died
+     * @param killer The player who killed them (can be null)
+     */
+    private void handleUltimateOnDeath(Player player, Player killer) {
+        UltimateClass playerClass = getPlayerUltimateClass(player.getUniqueId());
+        if (playerClass == null) return;
+        
+        switch (playerClass) {
+            case DEMOLITION:
+                // Drop TNT on death
+                player.getWorld().dropItemNaturally(player.getLocation(), new ItemStack(Material.TNT, 1));
+                player.getWorld().playSound(player.getLocation(), Sound.ENTITY_TNT_PRIMED, 1.0f, 1.0f);
+                
+                // Notify nearby players
+                for (Player nearby : player.getLocation().getWorld().getPlayers()) {
+                    if (nearby.getLocation().distance(player.getLocation()) <= 10) {
+                        MessageUtils.sendMessage(nearby, "&c&lBOOM! &eA Demolition expert just died nearby!");
+                    }
+                }
+                break;
+                
+            case KANGAROO:
+                // Save 50% of resources on death
+                if (Math.random() < 0.5) {
+                    // Already handled in dropPlayerResources method
+                    MessageUtils.sendMessage(player, "&e&lKANGAROO: &aYou saved some resources in your inventory!");
+                }
+                break;
+        }
     }
 }

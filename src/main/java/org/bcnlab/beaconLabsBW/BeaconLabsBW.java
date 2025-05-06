@@ -6,6 +6,7 @@ import org.bcnlab.beaconLabsBW.command.BedwarsCommandHandler;
 import org.bcnlab.beaconLabsBW.command.ForceTeamCommand;
 import org.bcnlab.beaconLabsBW.command.ForceMapCommand;
 import org.bcnlab.beaconLabsBW.command.ForceStartCommand;
+import org.bcnlab.beaconLabsBW.command.ModeCommand;
 import org.bcnlab.beaconLabsBW.config.ConfigManager;
 import org.bcnlab.beaconLabsBW.game.GameManager;
 import org.bcnlab.beaconLabsBW.generator.GeneratorManager;
@@ -15,6 +16,8 @@ import org.bcnlab.beaconLabsBW.listeners.PlayerListener;
 import org.bcnlab.beaconLabsBW.listeners.InventoryListener;
 import org.bcnlab.beaconLabsBW.shop.ShopManager;
 import org.bcnlab.beaconLabsBW.shop.TeamUpgradeManager;
+import org.bcnlab.beaconLabsBW.game.ultimates.UltimatesManager;
+import org.bcnlab.beaconLabsBW.game.ultimates.UltimatesListener;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 
 import org.bukkit.configuration.file.FileConfiguration;
@@ -47,12 +50,14 @@ public final class BeaconLabsBW extends JavaPlugin {
     private GeneratorManager generatorManager;
     private ShopManager shopManager;
     private TeamUpgradeManager teamUpgradeManager;
+    private UltimatesManager ultimatesManager;
     
     // Command handlers
     private BedwarsCommandHandler commandHandler;
     private ForceTeamCommand forceTeamCommand;
     private ForceMapCommand forceMapCommand;
     private ForceStartCommand forceStartCommand;
+    private ModeCommand modeCommand;
 
     @Override
     public void onEnable() {
@@ -66,6 +71,7 @@ public final class BeaconLabsBW extends JavaPlugin {
         this.generatorManager = new GeneratorManager(this);
         this.shopManager = new ShopManager(this);
         this.teamUpgradeManager = new TeamUpgradeManager(this);
+        this.ultimatesManager = new UltimatesManager(this);
         this.gameManager = new GameManager(this);
         
         // Register commands
@@ -85,6 +91,10 @@ public final class BeaconLabsBW extends JavaPlugin {
         this.forceStartCommand = new ForceStartCommand(this);
         getCommand("forcestart").setExecutor(forceStartCommand);
         getCommand("forcestart").setTabCompleter(forceStartCommand);
+        
+        this.modeCommand = new ModeCommand(this);
+        getCommand("mode").setExecutor(modeCommand);
+        getCommand("mode").setTabCompleter(modeCommand);
         
         // Register event listeners
         registerListeners();
@@ -122,6 +132,7 @@ public final class BeaconLabsBW extends JavaPlugin {
         pm.registerEvents(new BlockListener(this), this);
         pm.registerEvents(new EntityListener(this), this);
         pm.registerEvents(new InventoryListener(this), this);
+        pm.registerEvents(new UltimatesListener(this), this);
         
         // Start void check task
         playerListener.startVoidCheck();

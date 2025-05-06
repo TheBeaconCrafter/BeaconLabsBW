@@ -39,3 +39,7 @@ commands:
     description: 'Reduce countdown to 3 seconds'
     usage: '/forcestart'
     permission: bedwars.admin
+  mode:
+    description: 'Change the game mode between normal and ultimates'
+    usage: '/mode <normal|ultimates>'
+    permission: bedwars.play
