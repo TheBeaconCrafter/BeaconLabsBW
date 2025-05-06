@@ -8,9 +8,11 @@ import org.bcnlab.beaconLabsBW.game.Game;
 import org.bcnlab.beaconLabsBW.game.GameState;
 import org.bcnlab.beaconLabsBW.shop.ShopItem;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.Player;
 import java.util.UUID;
 import java.util.HashMap;
@@ -26,6 +28,8 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.metadata.FixedMetadataValue;
 
 /**
  * Handles player-related events for BedWars
@@ -141,6 +145,52 @@ public class PlayerListener implements Listener {
             }
         }
         
+        // Handle Dream Defender (Iron Golem) spawn
+        if ((event.getAction() == Action.RIGHT_CLICK_BLOCK || event.getAction() == Action.RIGHT_CLICK_AIR) && 
+            event.getHand() == EquipmentSlot.HAND) {
+            
+            ItemStack item = event.getItem();
+            if (item != null && item.getType() == Material.VILLAGER_SPAWN_EGG) {
+                // Check if the item is a Dream Defender
+                ItemMeta meta = item.getItemMeta();
+                if (meta != null && meta.hasDisplayName() && 
+                    meta.getDisplayName().contains("Dream Defender")) {
+                    
+                    event.setCancelled(true);
+                    
+                    // Check if player is in a game
+                    Game game = plugin.getGameManager().getPlayerGame(player);
+                    if (game != null && game.getState() == GameState.RUNNING) {
+                        // Consume the spawn egg
+                        if (item.getAmount() > 1) {
+                            item.setAmount(item.getAmount() - 1);
+                        } else {
+                            player.getInventory().setItemInMainHand(null);
+                        }
+                        
+                        // Spawn an Iron Golem that follows the player
+                        Location spawnLoc = player.getLocation();
+                        IronGolem golem = player.getWorld().spawn(spawnLoc, IronGolem.class);
+                        
+                        // Set metadata for team identification
+                        String team = game.getPlayerTeam(player);
+                        if (team != null) {
+                            // Use appropriate color for the team
+                            String teamColor = game.getArena().getTeam(team).getColor();
+                            golem.setCustomName(teamColor + " Defender");
+                            golem.setCustomNameVisible(true);
+                            golem.setMetadata("team", new FixedMetadataValue(plugin, team));
+                            golem.setMetadata("owner", new FixedMetadataValue(plugin, player.getUniqueId().toString()));
+                        }
+                        
+                        // Play spawn sound
+                        player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_IRON_GOLEM_REPAIR, 1.0f, 1.0f);
+                        MessageUtils.sendMessage(player, plugin.getPrefix() + "&aYou spawned a Dream Defender!");
+                    }
+                }
+            }
+        }
+        
         // Handle shop keeper interaction
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK || event.getAction() == Action.RIGHT_CLICK_AIR) {
             ItemStack item = event.getItem();
@@ -157,8 +207,7 @@ public class PlayerListener implements Listener {
     }    // Track last interaction time to prevent spam clicks on beds
     private final java.util.Map<java.util.UUID, Long> lastBedInteraction = new java.util.HashMap<>();
     private static final long BED_INTERACTION_COOLDOWN = 500; // 0.5 seconds
-    
-    private void handleBedBreak(Player player, Block bed, Game game) {
+      private void handleBedBreak(Player player, Block bed, Game game) {
         if (bed == null || game == null) return;
         
         // Anti-spam check
@@ -186,6 +235,9 @@ public class PlayerListener implements Listener {
                     player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
                     return;
                 }
+                
+                // Prevent bed from dropping items
+                bed.setType(Material.AIR);
                 
                 // Handle bed break in the game
                 game.handleBedBreak(teamName, player);
@@ -313,6 +365,56 @@ public class PlayerListener implements Listener {
             // Block other commands
             event.setCancelled(true);
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou cannot use commands during a game! Use &e/bw leave &cto quit.");
+        }
+    }
+    
+    // Check for players falling into the void
+    private org.bukkit.scheduler.BukkitTask voidCheckTask;
+    
+    /**
+     * Start the void check task
+     */
+    public void startVoidCheck() {
+        if (voidCheckTask != null) {
+            voidCheckTask.cancel();
+        }
+        
+        voidCheckTask = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            for (Game game : plugin.getGameManager().getActiveGames().values()) {
+                if (game.getState() != GameState.RUNNING) continue;
+                
+                // Check each player
+                for (UUID playerId : game.getPlayers()) {
+                    Player player = Bukkit.getPlayer(playerId);
+                    if (player == null || game.isSpectator(player)) continue;
+                    
+                    // Check if player is below void level
+                    if (player.getLocation().getY() < 0) {
+                        // Teleport to a safe location temporarily to prevent actual death event
+                        SerializableLocation specLoc = game.getArena().getSpectatorSpawn();
+                        if (specLoc != null) {
+                            Location safeLocation = specLoc.toBukkitLocation();
+                            if (safeLocation != null) {
+                                player.teleport(safeLocation);
+                            }
+                        }
+                        
+                        // Handle as a void death
+                        Player killer = player.getKiller(); // Can be null
+                        game.handlePlayerDeath(player, killer);
+                    }
+                }
+            }
+        }, 10L, 10L); // Check every half second
+    }
+    
+    /**
+     * Stop the void check task
+     */
+    public void stopVoidCheck() {
+        if (voidCheckTask != null) {
+            voidCheckTask.cancel();
+            voidCheckTask = null;
         }
     }
 }

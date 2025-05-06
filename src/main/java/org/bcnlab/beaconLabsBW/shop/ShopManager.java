@@ -368,8 +368,7 @@ public class ShopManager {
      * 
      * @param itemStack The item to customize
      * @param shopItem The shop item with details
-     */
-    private void customizeShopItem(ItemStack itemStack, ShopItem shopItem) {
+     */    private void customizeShopItem(ItemStack itemStack, ShopItem shopItem) {
         ItemMeta meta = itemStack.getItemMeta();
         if (meta != null) {
             // Set custom name if needed
@@ -389,9 +388,25 @@ public class ShopManager {
                 meta.addEnchant(org.bukkit.enchantments.Enchantment.PUNCH, 1, true);
             }
             
+            // Make tools and weapons unbreakable
+            Material type = itemStack.getType();
+            if (type.name().contains("SWORD") || 
+                type.name().contains("AXE") || 
+                type.name().contains("PICKAXE") ||
+                type.name().contains("SHOVEL") || 
+                type == Material.SHEARS ||
+                type == Material.BOW ||
+                type == Material.CROSSBOW ||
+                type == Material.FISHING_ROD) {
+                
+                meta.setUnbreakable(true);
+                meta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+            }
+            
             itemStack.setItemMeta(meta);
         }
     }
+  
     
     /**
      * Check if player has enough currency

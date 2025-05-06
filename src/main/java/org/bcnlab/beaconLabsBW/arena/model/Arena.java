@@ -91,20 +91,22 @@ public class Arena {
                 return false;
             }
         }
-        
-        // Need at least one generator of each type
+          // Need at least one generator of each type
         boolean hasIron = false;
         boolean hasGold = false;
         boolean hasEmerald = false;
+        boolean hasDiamond = false;
         
         for (GeneratorData generator : generators.values()) {
             switch (generator.getType()) {
                 case IRON -> hasIron = true;
                 case GOLD -> hasGold = true;
                 case EMERALD -> hasEmerald = true;
+                case DIAMOND -> hasDiamond = true;
             }
         }
         
+        // Diamond generators are optional
         return hasIron && hasGold && hasEmerald;
     }
 }

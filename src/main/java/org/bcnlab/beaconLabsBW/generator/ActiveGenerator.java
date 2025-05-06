@@ -15,6 +15,8 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
+import static org.bcnlab.beaconLabsBW.generator.GeneratorType.*;
+
 /**
  * Represents an active resource generator in a BedWars game
  */
@@ -42,12 +44,12 @@ public class ActiveGenerator {
         this.generatorData = generatorData;
         this.game = game;
         this.location = generatorData.getLocation().toBukkitLocation();
-        
-        // Base intervals based on generator type
+          // Base intervals based on generator type
         int baseInterval = switch (generatorData.getType()) {
             case IRON -> plugin.getConfigManager().getIronInterval();
             case GOLD -> plugin.getConfigManager().getGoldInterval();
             case EMERALD -> plugin.getConfigManager().getEmeraldInterval();
+            case DIAMOND -> plugin.getConfigManager().getDiamondInterval();
         };
         
         // Scale interval based on number of players (faster with more players)
@@ -137,11 +139,11 @@ public class ActiveGenerator {
      */
     private void updateHologram() {
         if (hologram == null) return;
-        
-        String type = switch (generatorData.getType()) {
+          String type = switch (generatorData.getType()) {
             case IRON -> "§f§lIron";
             case GOLD -> "§6§lGold";
             case EMERALD -> "§a§lEmerald";
+            case DIAMOND -> "§b§lDiamond";
         };
         
         hologram.setCustomName(type + " §7- §r" + timer + "s");
@@ -155,11 +157,11 @@ public class ActiveGenerator {
         
         World world = location.getWorld();
         if (world == null) return;
-        
-        Material material = switch (generatorData.getType()) {
+          Material material = switch (generatorData.getType()) {
             case IRON -> Material.IRON_INGOT;
             case GOLD -> Material.GOLD_INGOT;
             case EMERALD -> Material.EMERALD;
+            case DIAMOND -> Material.DIAMOND;
         };
         
         ItemStack item = new ItemStack(material, 1);
@@ -193,6 +195,7 @@ public class ActiveGenerator {
             case IRON -> Particle.CRIT;
             case GOLD -> Particle.FLAME;
             case EMERALD -> Particle.HAPPY_VILLAGER;
+            case DIAMOND -> Particle.FLAME;
         };
         
         for (int i = 0; i < 8; i++) {

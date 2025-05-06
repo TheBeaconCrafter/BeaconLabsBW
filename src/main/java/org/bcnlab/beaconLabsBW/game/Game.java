@@ -13,6 +13,7 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -47,11 +48,13 @@ public class Game {
     private BukkitTask gameTimerTask;
     private int countdown;
     private int gameTimer;
-    
-    // Game statistics tracking
+      // Game statistics tracking
     private final Map<UUID, Integer> playerKills = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> playerBedBreaks = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> playerDeaths = new ConcurrentHashMap<>();
+    
+    // Scoreboard manager
+    private org.bcnlab.beaconLabsBW.utils.GameScoreboard scoreboardManager;
     
     /**
      * Creates a new BedWars game
@@ -67,8 +70,7 @@ public class Game {
     }
       /**
      * Set up the game arena
-     */
-    public void setup() {
+     */    public void setup() {
         // Initialize team data
         for (String teamName : arena.getTeams().keySet()) {
             teams.put(teamName, ConcurrentHashMap.newKeySet());
@@ -77,6 +79,9 @@ public class Game {
         
         // Set game state to waiting
         state = GameState.WAITING;
+        
+        // Initialize scoreboard manager
+        scoreboardManager = new org.bcnlab.beaconLabsBW.utils.GameScoreboard(plugin, this);
     }
     
     /**
@@ -128,9 +133,11 @@ public class Game {
         
         // Teleport to lobby
         teleportToLobby(player);
-        
-        // Reset player
+          // Reset player
         resetPlayer(player);
+        
+        // Set up player scoreboard
+        scoreboardManager.setupScoreboard(player);
         
         // Announce join
         broadcastMessage("&e" + player.getName() + " &7joined the game! &8(" + players.size() + "/" + arena.getMaxPlayers() + ")");
@@ -240,9 +247,11 @@ public class Game {
         if (state != GameState.STARTING) return;
         
         state = GameState.RUNNING;
-        
-        // Assign players to teams
+          // Assign players to teams
         assignTeams();
+        
+        // Reset team upgrades
+        plugin.getTeamUpgradeManager().resetUpgrades();
         
         // Teleport players to their team spawns
         for (UUID playerId : players) {
@@ -266,9 +275,14 @@ public class Game {
                     }
                 }
             }
-        }
-          // Start resource generators
+        }        // Start resource generators
         startGenerators();
+        
+        // Update tab list with team colors
+        scoreboardManager.updateTabList();
+        
+        // Start scoreboard update task
+        scoreboardManager.startTask();
         
         // Announce game start
         broadcastMessage("&a&lGAME STARTED! &eProtect your bed and destroy other beds!");
@@ -506,8 +520,7 @@ public class Game {
             }
         }
     }
-    
-    /**
+      /**
      * Reset a player's state
      *
      * @param player The player
@@ -517,7 +530,13 @@ public class Game {
         player.setFoodLevel(20);
         player.setSaturation(20);
         player.getInventory().clear();
-        player.setGameMode(GameMode.ADVENTURE);
+        
+        // Use survival mode for active players, spectator for spectators
+        if (spectators.contains(player.getUniqueId())) {
+            player.setGameMode(GameMode.SPECTATOR);
+        } else {
+            player.setGameMode(GameMode.SURVIVAL);
+        }
     }
       /**
      * Handle a player death
@@ -556,10 +575,12 @@ public class Game {
             broadcastMessage("&e" + player.getName() + " &7was eliminated!");
             
             // Check for game end
-            checkGameEnd();
-        } else {
+            checkGameEnd();        } else {
             // Bed is intact, respawn after delay
             broadcastMessage("&e" + player.getName() + " &7will respawn in 5 seconds!");
+            
+            // Put player in spectator mode temporarily
+            player.setGameMode(GameMode.SPECTATOR);
             
             // Schedule respawn
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -569,9 +590,7 @@ public class Game {
                 }
             }, 100L); // 5 seconds
         }
-    }
-    
-    /**
+    }    /**
      * Drop resources from a player's inventory
      *
      * @param player The player
@@ -585,6 +604,16 @@ public class Game {
                 Material.DIAMOND
         );
         
+        // Check death cause to determine if items should be dropped
+        EntityDamageEvent lastDamage = player.getLastDamageCause();
+        Player killer = player.getKiller();
+        
+        // If player died in the void without being killed by a player, don't drop resources
+        if (lastDamage != null && lastDamage.getCause() == EntityDamageEvent.DamageCause.VOID && killer == null) {
+            return;
+        }
+        
+        // Drop resources for other death causes or when killed by another player
         for (ItemStack item : player.getInventory().getContents()) {
             if (item != null && resourceTypes.contains(item.getType())) {
                 player.getWorld().dropItemNaturally(player.getLocation(), item);
@@ -624,13 +653,15 @@ public class Game {
         
         MessageUtils.sendMessage(player, plugin.getPrefix() + "&eYou are now a spectator. Use /bw leave to exit the game.");
     }
-    
-    /**
+      /**
      * Respawn a player at their team's spawn
      *
      * @param player The player
      */
     private void respawnPlayer(Player player) {
+        // Save player's permanent tools before resetting
+        Map<Material, ItemStack> permanentItems = savePermanentItems(player);
+        
         // Reset player state
         resetPlayer(player);
         
@@ -643,11 +674,62 @@ public class Game {
                 if (spawnLoc != null) {
                     player.teleport(spawnLoc.toBukkitLocation());
                 }
-                
-                // Give team armor and initial equipment
+                  // Give team armor and initial equipment
                 giveTeamArmor(player, teamData);
                 giveInitialEquipment(player);
+                
+                // Apply team upgrades
+                applyTeamUpgrades(player);
+                
+                // Restore permanent tools
+                restorePermanentItems(player, permanentItems);
             }
+        }
+    }
+    
+    /**
+     * Save permanent items (tools) from a player's inventory
+     *
+     * @param player The player
+     * @return Map of saved items
+     */
+    private Map<Material, ItemStack> savePermanentItems(Player player) {
+        Map<Material, ItemStack> saved = new HashMap<>();
+        
+        // Check for permanent tools in description
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && !item.getType().isAir() && isPermanentTool(item)) {
+                saved.put(item.getType(), item.clone());
+            }
+        }
+        
+        return saved;
+    }
+    
+    /**
+     * Check if an item is a permanent tool
+     * 
+     * @param item The item to check
+     * @return true if permanent, false otherwise
+     */
+    private boolean isPermanentTool(ItemStack item) {
+        if (item == null || item.getType().isAir()) return false;
+        
+        Material type = item.getType();
+        return type == Material.SHEARS || 
+               type.name().contains("PICKAXE") ||
+               type.name().contains("AXE");
+    }
+    
+    /**
+     * Restore permanent items to player's inventory
+     * 
+     * @param player The player
+     * @param items Map of items to restore
+     */
+    private void restorePermanentItems(Player player, Map<Material, ItemStack> items) {
+        for (ItemStack item : items.values()) {
+            player.getInventory().addItem(item);
         }
     }
     
@@ -755,12 +837,16 @@ public class Game {
         if (gameTimerTask != null) {
             gameTimerTask.cancel();
         }
-        
-        // Stop generators
+          // Stop generators
         for (ActiveGenerator generator : activeGenerators) {
             generator.stop();
         }
         activeGenerators.clear();
+        
+        // Stop scoreboard task
+        if (scoreboardManager != null) {
+            scoreboardManager.stopTask();
+        }
           // Announce winner
         if (winningTeam != null) {
             broadcastTitle("&6&lGAME OVER!", getTeamDisplayName(winningTeam) + " &6team wins!");
@@ -896,13 +982,20 @@ public class Game {
                 player.setGameMode(GameMode.SURVIVAL);
             }
         }
-        
-        // Clear player lists
+          // Clean up scoreboard
+        if (scoreboardManager != null) {
+            scoreboardManager.cleanup();
+        }
+          // Clear player lists
         players.clear();
         spectators.clear();
         playerTeams.clear();
         for (Set<UUID> teamPlayers : teams.values()) {
             teamPlayers.clear();
+        }
+          // Reset bed status for next game
+        for (String teamName : bedStatus.keySet()) {
+            bedStatus.put(teamName, true); // All beds are intact at start
         }
     }
     
@@ -1002,5 +1095,139 @@ public class Game {
     public boolean isSpectator(Player player) {
         if (player == null) return false;
         return spectators.contains(player.getUniqueId());
+    }
+    
+    /**
+     * Apply a team upgrade to a player
+     * 
+     * @param player The player
+     * @param upgradeType The upgrade type
+     * @param level The upgrade level
+     */
+    public void applyTeamUpgrade(Player player, org.bcnlab.beaconLabsBW.shop.TeamUpgrade.UpgradeType upgradeType, int level) {
+        if (player == null || upgradeType == null || level <= 0) return;
+        
+        switch (upgradeType) {
+            case SHARPNESS -> applySharpnessUpgrade(player, level);
+            case PROTECTION -> applyProtectionUpgrade(player, level);
+            case HASTE -> applyHasteUpgrade(player, level);
+            case HEALING -> applyHealingUpgrade(player, level);
+            case FORGE -> {
+                // Forge is applied directly to generators by regeneration methods
+            }
+            case TRAP -> {
+                // Trap is checked when enemies enter the base
+            }
+        }
+    }
+      /**
+     * Apply sharpness upgrade to player's sword
+     * 
+     * @param player The player
+     * @param level The upgrade level
+     */
+    private void applySharpnessUpgrade(Player player, int level) {
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType().name().contains("SWORD")) {
+                org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
+                if (meta != null) {
+                    meta.addEnchant(org.bukkit.enchantments.Enchantment.SHARPNESS, level, true);
+                    item.setItemMeta(meta);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Apply protection upgrade to player's armor
+     * 
+     * @param player The player
+     * @param level The upgrade level
+     */
+    private void applyProtectionUpgrade(Player player, int level) {
+        for (ItemStack item : player.getInventory().getArmorContents()) {
+            if (item != null && !item.getType().isAir()) {
+                org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
+                if (meta != null) {
+                    meta.addEnchant(org.bukkit.enchantments.Enchantment.PROTECTION, level, true);
+                    item.setItemMeta(meta);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Apply haste upgrade to player
+     * 
+     * @param player The player
+     * @param level The upgrade level
+     */
+    private void applyHasteUpgrade(Player player, int level) {
+        player.addPotionEffect(new org.bukkit.potion.PotionEffect(
+            org.bukkit.potion.PotionEffectType.HASTE,
+            Integer.MAX_VALUE,
+            level - 1,
+            false,
+            false
+        ));
+    }
+    
+    /**
+     * Apply healing upgrade to player
+     * 
+     * @param player The player
+     * @param level The upgrade level
+     */
+    private void applyHealingUpgrade(Player player, int level) {
+        // This is checked in a task that applies regen near base
+    }
+    
+    /**
+     * Apply all team upgrades to a player
+     * 
+     * @param player The player
+     */
+    private void applyTeamUpgrades(Player player) {
+        String teamName = playerTeams.get(player.getUniqueId());
+        if (teamName == null) return;
+        
+        org.bcnlab.beaconLabsBW.shop.TeamUpgradeManager upgradeManager = plugin.getTeamUpgradeManager();
+        
+        // Apply all upgrade types
+        for (org.bcnlab.beaconLabsBW.shop.TeamUpgrade.UpgradeType type : 
+             org.bcnlab.beaconLabsBW.shop.TeamUpgrade.UpgradeType.values()) {
+            int level = upgradeManager.getUpgradeLevel(teamName, type);
+            if (level > 0) {
+                applyTeamUpgrade(player, type, level);
+            }
+        }
+    }
+    
+    /**
+     * Broadcast a message to a specific team
+     * 
+     * @param teamName The team name
+     * @param message The message to broadcast
+     */
+    public void broadcastTeamMessage(String teamName, String message) {
+        if (teamName == null || message == null) return;
+        
+        Set<UUID> teamPlayers = teams.getOrDefault(teamName, Collections.emptySet());
+        for (UUID playerId : teamPlayers) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null) {
+                MessageUtils.sendMessage(player, message);
+            }
+        }
+    }
+    
+    /**
+     * Get all members of a team
+     * 
+     * @param teamName The team name
+     * @return Set of player UUIDs in the team
+     */
+    public Set<UUID> getTeamMembers(String teamName) {
+        return teams.getOrDefault(teamName, Collections.emptySet());
     }
 }

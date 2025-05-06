@@ -9,7 +9,9 @@ import org.bcnlab.beaconLabsBW.generator.GeneratorManager;
 import org.bcnlab.beaconLabsBW.listeners.BlockListener;
 import org.bcnlab.beaconLabsBW.listeners.EntityListener;
 import org.bcnlab.beaconLabsBW.listeners.PlayerListener;
+import org.bcnlab.beaconLabsBW.listeners.InventoryListener;
 import org.bcnlab.beaconLabsBW.shop.ShopManager;
+import org.bcnlab.beaconLabsBW.shop.TeamUpgradeManager;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 
 import org.bukkit.configuration.file.FileConfiguration;
@@ -41,6 +43,7 @@ public final class BeaconLabsBW extends JavaPlugin {
     private GameManager gameManager;
     private GeneratorManager generatorManager;
     private ShopManager shopManager;
+    private TeamUpgradeManager teamUpgradeManager;
     
     // Command handler
     private BedwarsCommandHandler commandHandler;
@@ -56,6 +59,7 @@ public final class BeaconLabsBW extends JavaPlugin {
         this.arenaManager = new ArenaManager(this);
         this.generatorManager = new GeneratorManager(this);
         this.shopManager = new ShopManager(this);
+        this.teamUpgradeManager = new TeamUpgradeManager(this);
         this.gameManager = new GameManager(this);
         
         // Register commands
@@ -89,11 +93,19 @@ public final class BeaconLabsBW extends JavaPlugin {
         getLogger().info(pluginPrefix + "BeaconLabsBW was disabled!");
     }
     
+    private PlayerListener playerListener;
+    
     private void registerListeners() {
         PluginManager pm = getServer().getPluginManager();
-        pm.registerEvents(new PlayerListener(this), this);
+        // Store the PlayerListener instance to access void check methods
+        playerListener = new PlayerListener(this);
+        pm.registerEvents(playerListener, this);
         pm.registerEvents(new BlockListener(this), this);
         pm.registerEvents(new EntityListener(this), this);
+        pm.registerEvents(new InventoryListener(this), this);
+        
+        // Start void check task
+        playerListener.startVoidCheck();
     }
 
     private void loadConfig() {
@@ -118,6 +130,7 @@ public final class BeaconLabsBW extends JavaPlugin {
         config.addDefault("generators.iron.interval", 2);
         config.addDefault("generators.gold.interval", 5);
         config.addDefault("generators.emerald.interval", 15);
+        config.addDefault("generators.diamond.interval", 30);
         
         // Team settings
         config.addDefault("teams.max-players", 4);

@@ -64,10 +64,10 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
             case "removegenerator" -> handleRemoveGenerator(player, args);
             case "save" -> handleSave(player);
             case "join" -> handleJoin(player, args);
-            case "leave" -> handleLeave(player);
-            case "start" -> handleStart(player, args);
+            case "leave" -> handleLeave(player);            case "start" -> handleStart(player, args);
             case "stop" -> handleStop(player, args);
             case "shop" -> handleShop(player);
+            case "upgrades" -> handleUpgrades(player);
             default -> {
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cUnknown command. Use &e/bw help &cfor a list of commands.");
                 return true;
@@ -100,6 +100,7 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         MessageUtils.sendMessage(player, "&e/bw join [arena] &7- Join a game");
         MessageUtils.sendMessage(player, "&e/bw leave &7- Leave current game");
         MessageUtils.sendMessage(player, "&e/bw shop &7- Open shop (during game)");
+        MessageUtils.sendMessage(player, "&e/bw upgrades &7- Open team upgrades (during game)");
     }
     
     private void handleCreate(Player player, String[] args) {
@@ -409,10 +410,9 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou must be in edit mode. Use /bw edit <arena>");
             return;
         }
-        
-        if (args.length < 2) {
+          if (args.length < 2) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cUsage: /bw addgenerator <type> [team]");
-            MessageUtils.sendMessage(player, plugin.getPrefix() + "&7Types: IRON, GOLD, EMERALD");
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&7Types: IRON, GOLD, EMERALD, DIAMOND");
             return;
         }
         
@@ -429,8 +429,7 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         GeneratorType type;
         try {
             type = GeneratorType.valueOf(typeStr);
-        } catch (IllegalArgumentException e) {
-            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cInvalid generator type. Use: IRON, GOLD, EMERALD");
+        } catch (IllegalArgumentException e) {            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cInvalid generator type. Use: IRON, GOLD, EMERALD, DIAMOND");
             return;
         }
         
@@ -712,6 +711,30 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         plugin.getShopManager().openShop(player);
     }
     
+    private void handleUpgrades(Player player) {
+        if (!player.hasPermission("bedwars.play")) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have permission to use team upgrades.");
+            return;
+        }
+        
+        // Check if player is in a game
+        Game game = plugin.getGameManager().getPlayerGame(player);
+        if (game == null) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou must be in a game to use team upgrades.");
+            return;
+        }
+        
+        // Check if player is on a team
+        String teamName = game.getPlayerTeam(player);
+        if (teamName == null) {
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou must be on a team to use team upgrades.");
+            return;
+        }
+        
+        // Open team upgrades menu
+        plugin.getTeamUpgradeManager().openUpgradesMenu(player, game);
+    }
+    
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         List<String> completions = new ArrayList<>();
@@ -725,10 +748,10 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
                 commands.addAll(Arrays.asList(
                     "help", "create", "delete", "list", "edit", "setspawn", "setbed", 
                     "setlobby", "setspectator", "addteam", "addgenerator", "removegenerator", 
-                    "save", "start", "stop", "shop"
+                    "save", "start", "stop", "shop", "upgrades"
                 ));
             } else {
-                commands.addAll(Arrays.asList("help", "join", "leave", "shop"));
+                commands.addAll(Arrays.asList("help", "join", "leave", "shop", "upgrades"));
             }
             
             for (String cmd : commands) {

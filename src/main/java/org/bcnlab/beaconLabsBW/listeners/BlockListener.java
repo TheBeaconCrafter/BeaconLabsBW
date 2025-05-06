@@ -8,6 +8,7 @@ import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TNTPrimed;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -23,6 +24,24 @@ public class BlockListener implements Listener {
     
     public BlockListener(BeaconLabsBW plugin) {
         this.plugin = plugin;
+    }
+    
+    // List of blocks that can be broken by players (blocks sold in the shop)
+    private static final java.util.Set<Material> BREAKABLE_BLOCKS = new java.util.HashSet<>(java.util.Arrays.asList(
+        Material.WHITE_WOOL, Material.RED_WOOL, Material.BLUE_WOOL, Material.GREEN_WOOL,
+        Material.YELLOW_WOOL, Material.LIGHT_BLUE_WOOL, Material.PINK_WOOL, Material.GRAY_WOOL,
+        Material.OAK_PLANKS, Material.STONE, Material.END_STONE, Material.OBSIDIAN, 
+        Material.TERRACOTTA, Material.GLASS
+    ));
+    
+    /**
+     * Check if a material is a block that can be broken by players
+     * 
+     * @param material Block material
+     * @return true if breakable, false otherwise
+     */
+    private boolean isBreakableBlock(Material material) {
+        return material != null && BREAKABLE_BLOCKS.contains(material);
     }
     
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -44,6 +63,21 @@ public class BlockListener implements Listener {
                 // Can't place blocks before game starts
                 event.setCancelled(true);
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only place blocks during the game!");
+                return;
+            }
+            
+            // Special handling for TNT - instant ignition
+            if (block.getType() == Material.TNT) {
+                event.setCancelled(true); // Cancel the placement
+                block.setType(Material.AIR); // Make sure the block is not placed
+                
+                // Spawn primed TNT instead
+                TNTPrimed tnt = player.getWorld().spawn(block.getLocation().add(0.5, 0.0, 0.5), TNTPrimed.class);
+                tnt.setFuseTicks(40); // 2-second fuse (40 ticks)
+                tnt.setSource(player); // Set the player as the source
+                
+                // Play the primed sound
+                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_TNT_PRIMED, 0.5f, 1.0f);
                 return;
             }
             
@@ -83,18 +117,23 @@ public class BlockListener implements Listener {
                 event.setCancelled(true);
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks during the game!");
                 return;
-            }
-            
-            // Check if this is a special block (bed)
+            }            // Check if this is a bed block (handled by PlayerListener)
             if (isBedBlock(block.getType())) {
-                // Let the player listener handle bed breaking
+                // Cancel the event - PlayerListener will handle the bed breaking
+                event.setCancelled(true);
                 return;
             }
-            
-            // Allow breaking blocks that were placed during the game
+              // Allow breaking blocks that were placed during the game
             if (game.isPlacedBlock(block)) {
                 return;
-            } else {
+            } 
+            // Don't allow breaking blocks that weren't placed by players, even if they're valid shop blocks
+            else if (isBreakableBlock(block.getType())) {
+                event.setCancelled(true);
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks placed by players!");
+                return;
+            }
+            else {
                 // Prevent breaking original map blocks
                 event.setCancelled(true);
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks placed by players!");
@@ -112,7 +151,8 @@ public class BlockListener implements Listener {
             }
         }
     }
-      private boolean isBedBlock(Material material) {
+    
+    private boolean isBedBlock(Material material) {
         return material != null && material.name().contains("BED");
     }
 }

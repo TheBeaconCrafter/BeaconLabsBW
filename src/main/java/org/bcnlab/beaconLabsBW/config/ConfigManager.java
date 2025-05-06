@@ -23,6 +23,7 @@ public class ConfigManager {
     private final int ironInterval;
     private final int goldInterval;
     private final int emeraldInterval;
+    private final int diamondInterval;
     
     // Team settings
     private final int maxTeamPlayers;
@@ -40,6 +41,7 @@ public class ConfigManager {
         this.ironInterval = config.getInt("generators.iron.interval", 2);
         this.goldInterval = config.getInt("generators.gold.interval", 5);
         this.emeraldInterval = config.getInt("generators.emerald.interval", 15);
+        this.diamondInterval = config.getInt("generators.diamond.interval", 30);
         
         this.maxTeamPlayers = config.getInt("teams.max-players", 4);
     }

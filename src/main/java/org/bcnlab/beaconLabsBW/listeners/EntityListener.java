@@ -3,11 +3,14 @@ package org.bcnlab.beaconLabsBW.listeners;
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
 import org.bcnlab.beaconLabsBW.game.Game;
 import org.bcnlab.beaconLabsBW.game.GameState;
+import org.bukkit.Material;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.*;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 
 /**
  * Handles entity-related events for BedWars
@@ -35,8 +38,7 @@ public class EntityListener implements Listener {
             }
         }
     }
-    
-    @EventHandler
+      @EventHandler
     public void onEntityExplode(EntityExplodeEvent event) {
         Entity entity = event.getEntity();
         
@@ -44,8 +46,10 @@ public class EntityListener implements Listener {
         for (Game game : plugin.getGameManager().getActiveGames().values()) {
             if (entity.getWorld().getName().equals(game.getArena().getWorldName())) {
                 if (game.getState() == GameState.RUNNING) {
-                    // Remove non-player placed blocks from explosion
+                    // Only affect player-placed blocks
                     event.blockList().removeIf(block -> !game.isPlacedBlock(block));
+                      // Preserve certain blocks
+                    event.blockList().removeIf(block -> block.getType().name().contains("BED"));
                 } else {
                     // Cancel explosion if game is not running
                     event.setCancelled(true);
@@ -96,8 +100,7 @@ public class EntityListener implements Listener {
             }
         }
     }
-    
-    @EventHandler
+      @EventHandler
     public void onEntityTarget(EntityTargetEvent event) {
         if (event.getTarget() instanceof Player player) {
             Game game = plugin.getGameManager().getPlayerGame(player);
@@ -105,6 +108,21 @@ public class EntityListener implements Listener {
             if (game != null && game.isSpectator(player)) {
                 // Mobs should not target spectators
                 event.setCancelled(true);
+                return;
+            }
+            
+            // Handle Dream Defender targeting
+            if (event.getEntity() instanceof IronGolem golem && golem.hasMetadata("team")) {
+                // Get the golem's team
+                String golemTeam = golem.getMetadata("team").get(0).asString();
+                
+                // Get the target player's team
+                String playerTeam = game != null ? game.getPlayerTeam(player) : null;
+                
+                // Cancel targeting if player is on the same team as the golem
+                if (golemTeam != null && golemTeam.equals(playerTeam)) {
+                    event.setCancelled(true);
+                }
             }
         }
     }
@@ -160,10 +178,47 @@ public class EntityListener implements Listener {
         
         if (projectile.getShooter() instanceof Player player) {
             Game game = plugin.getGameManager().getPlayerGame(player);
-            
-            // Handle special projectiles like bridge eggs
+              // Handle special projectiles like bridge eggs
             if (game != null && game.getState() == GameState.RUNNING && projectile instanceof Egg) {
-                // Can implement bridge egg logic here
+                // Bridge egg implementation - track it to create a bridge when it lands
+                projectile.setMetadata("bridge_egg", new FixedMetadataValue(plugin, true));
+            }
+        }
+    }
+    
+    @EventHandler
+    public void onEntityInteract(PlayerInteractEntityEvent event) {
+        Player player = event.getPlayer();
+        Entity entity = event.getRightClicked();
+        
+        // Check if player is in a game
+        Game game = plugin.getGameManager().getPlayerGame(player);
+        if (game != null) {
+            // Prevent interaction with item frames and paintings
+            if (entity instanceof ItemFrame || entity instanceof Painting) {
+                event.setCancelled(true);
+            }
+        }
+    }
+    
+    @EventHandler
+    public void onHangingBreak(org.bukkit.event.hanging.HangingBreakEvent event) {
+        // Prevent breaking of hanging entities (item frames, paintings) in game worlds
+        for (Game game : plugin.getGameManager().getActiveGames().values()) {
+            if (event.getEntity().getWorld().getName().equals(game.getArena().getWorldName())) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+    
+    @EventHandler
+    public void onItemFrameRotate(PlayerInteractEntityEvent event) {
+        if (event.getRightClicked() instanceof ItemFrame) {
+            Player player = event.getPlayer();
+            Game game = plugin.getGameManager().getPlayerGame(player);
+            if (game != null) {
+                event.setCancelled(true);
             }
         }
     }

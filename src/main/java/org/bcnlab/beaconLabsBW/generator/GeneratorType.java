@@ -6,5 +6,6 @@ package org.bcnlab.beaconLabsBW.generator;
 public enum GeneratorType {
     IRON,
     GOLD,
-    EMERALD
+    EMERALD,
+    DIAMOND
 }
