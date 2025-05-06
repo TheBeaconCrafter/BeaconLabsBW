@@ -132,8 +132,7 @@ public class PlayerListener implements Listener {
     public void onPlayerInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         Block block = event.getClickedBlock();
-        
-        // Check for right-clicking or left-clicking beds 
+          // Check for right-clicking or left-clicking beds 
         if (block != null && 
             (event.getAction() == Action.RIGHT_CLICK_BLOCK || event.getAction() == Action.LEFT_CLICK_BLOCK) && 
             block.getType().name().contains("BED")) {
@@ -141,8 +140,21 @@ public class PlayerListener implements Listener {
             // Check if the player is in a game
             Game game = plugin.getGameManager().getPlayerGame(player);
             if (game != null && game.getState() == GameState.RUNNING) {
-                // Handle bed breaking logic in game
-                handleBedBreak(player, block, game);
+                try {
+                    // Handle bed breaking logic in game
+                    handleBedBreak(player, block, game);
+                } catch (Exception e) {
+                    // If an error occurs during bed interaction (like the IllegalArgumentException)
+                    plugin.getLogger().warning("Error during bed interaction: " + e.getMessage());
+                    
+                    // Cancel the event to prevent further issues
+                    event.setCancelled(true);
+                    
+                    // Try to repair the bed if it's causing issues
+                    if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+                        game.resetBedAtLocation(block.getLocation());
+                    }
+                }
                 
                 // Since bed is part of the game, don't run code below
                 return;

@@ -18,7 +18,9 @@ import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -409,10 +411,10 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         if (arena == null) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou must be in edit mode. Use /bw edit <arena>");
             return;
-        }
-          if (args.length < 2) {
+        }          if (args.length < 2) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cUsage: /bw addgenerator <type> [team]");
-            MessageUtils.sendMessage(player, plugin.getPrefix() + "&7Types: IRON, GOLD, EMERALD, DIAMOND");
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&7Types: IRON, GOLD, TEAM, EMERALD, DIAMOND");
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&7Note: TEAM generators replace individual IRON and GOLD generators for teams");
             return;
         }
         
@@ -510,57 +512,120 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
         if (arena.isConfigured()) {
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&aArena is fully configured and ready to play!");
         } else {
-            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cArena is not fully configured yet.");
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&c═════════════════════════════════");
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cArena Configuration Incomplete");
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&c═════════════════════════════════");
             
-            // Check what's missing
+            // Create a list of missing components
+            List<String> missingComponents = new ArrayList<>();
+            
+            // Check teams
             if (arena.getTeams().isEmpty()) {
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Add teams with &e/bw addteam <name> <color>");
+                missingComponents.add("&7- &cTeams: &eAdd teams with &6/bw addteam <name> <color>");
             }
             
+            // Check spawns
             if (arena.getLobbySpawn() == null) {
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Set lobby spawn with &e/bw setlobby");
+                missingComponents.add("&7- &cLobby Spawn: &eSet with &6/bw setlobby");
             }
             
             if (arena.getSpectatorSpawn() == null) {
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Set spectator spawn with &e/bw setspectator");
+                missingComponents.add("&7- &cSpectator Spawn: &eSet with &6/bw setspectator");
             }
             
             // Check for incomplete team setups
+            boolean hasIncompleteTeams = false;
+            StringBuilder teamIssues = new StringBuilder();
+            
             for (String teamName : arena.getTeams().keySet()) {
                 TeamData team = arena.getTeam(teamName);
                 
                 if (team.getSpawnLocation() == null) {
-                    MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Set spawn for team &e" + teamName + " &7with &e/bw setspawn " + teamName);
+                    teamIssues.append("\n&7  • &eTeam ").append(teamName).append(": &cMissing spawn &e(use &6/bw setspawn ").append(teamName).append("&e)");
+                    hasIncompleteTeams = true;
                 }
                 
                 if (team.getBedLocation() == null) {
-                    MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Set bed for team &e" + teamName + " &7with &e/bw setbed " + teamName);
+                    teamIssues.append("\n&7  • &eTeam ").append(teamName).append(": &cMissing bed &e(use &6/bw setbed ").append(teamName).append("&e)");
+                    hasIncompleteTeams = true;
                 }
+            }
+            
+            if (hasIncompleteTeams) {
+                missingComponents.add("&7- &cIncomplete Team Setup:" + teamIssues.toString());
             }
             
             // Check generators
             boolean hasIron = false;
             boolean hasGold = false;
             boolean hasEmerald = false;
+            boolean hasTeamGenerators = false;
+            int teamGeneratorCount = 0;
+            Set<String> teamsWithGenerators = new HashSet<>();
             
             for (GeneratorData generator : arena.getGenerators().values()) {
                 switch (generator.getType()) {
                     case IRON -> hasIron = true;
                     case GOLD -> hasGold = true;
+                    case TEAM -> {
+                        // TEAM generators count as both iron and gold
+                        hasIron = true;
+                        hasGold = true;
+                        hasTeamGenerators = true;
+                        teamGeneratorCount++;
+                        if (generator.getTeam() != null) {
+                            teamsWithGenerators.add(generator.getTeam());
+                        }
+                    }
                     case EMERALD -> hasEmerald = true;
+                    default -> {}
                 }
             }
             
-            if (!hasIron) {
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Add an iron generator with &e/bw addgenerator IRON");
+            StringBuilder generatorIssues = new StringBuilder();
+            boolean hasGeneratorIssues = false;
+            
+            if (!hasIron && !hasTeamGenerators) {
+                generatorIssues.append("\n&7  • &cMissing Iron generators &e(use &6/bw addgenerator IRON&e)");
+                hasGeneratorIssues = true;
             }
             
-            if (!hasGold) {
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Add a gold generator with &e/bw addgenerator GOLD");
+            if (!hasGold && !hasTeamGenerators) {
+                generatorIssues.append("\n&7  • &cMissing Gold generators &e(use &6/bw addgenerator GOLD&e)");
+                hasGeneratorIssues = true;
             }
             
             if (!hasEmerald) {
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&7- Add an emerald generator with &e/bw addgenerator EMERALD");
+                generatorIssues.append("\n&7  • &cMissing Emerald generators &e(use &6/bw addgenerator EMERALD&e)");
+                hasGeneratorIssues = true;
+            }
+            
+            // Check if all teams have generators if using TEAM generators
+            if (hasTeamGenerators && !arena.getTeams().isEmpty()) {
+                Set<String> teamsMissingGenerators = new HashSet<>(arena.getTeams().keySet());
+                teamsMissingGenerators.removeAll(teamsWithGenerators);
+                
+                if (!teamsMissingGenerators.isEmpty()) {
+                    generatorIssues.append("\n&7  • &cTeams missing generators:");
+                    for (String teamName : teamsMissingGenerators) {
+                        generatorIssues.append("\n&7    - &e").append(teamName).append(" &e(use &6/bw addgenerator TEAM ").append(teamName).append("&e)");
+                    }
+                    hasGeneratorIssues = true;
+                }
+            }
+            
+            if (hasGeneratorIssues) {
+                missingComponents.add("&7- &cGenerator Issues:" + generatorIssues.toString());
+            }
+            
+            // Display all missing components
+            if (missingComponents.isEmpty()) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cUnknown issue with configuration. Please check all settings.");
+            } else {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&eMissing Components:");
+                for (String component : missingComponents) {
+                    MessageUtils.sendMessage(player, component);
+                }
             }
         }
     }
@@ -785,10 +850,9 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
                             }
                         }
                     }
-                }
-                case "addgenerator" -> {
+                }            case "addgenerator" -> {
                     // Generator types
-                    for (String type : Arrays.asList("IRON", "GOLD", "EMERALD")) {
+                    for (String type : Arrays.asList("IRON", "GOLD", "EMERALD", "DIAMOND", "TEAM")) {
                         if (type.startsWith(partial.toUpperCase())) {
                             completions.add(type);
                         }

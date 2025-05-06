@@ -3,6 +3,7 @@ package org.bcnlab.beaconLabsBW.game;
 import lombok.Getter;
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
 import org.bcnlab.beaconLabsBW.arena.model.Arena;
+import org.bcnlab.beaconLabsBW.arena.model.GeneratorData;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -56,20 +57,59 @@ public class GameManager {
         startGame(arena);
         plugin.getLogger().info("Auto-started BedWars game with arena: " + arena.getName());
     }
-    
-    /**
+      /**
      * Start a new BedWars game
      * 
      * @param arena The arena to use
      * @return The created game, or null if arena is invalid
      */
     public Game startGame(Arena arena) {
-        if (arena == null || !arena.isConfigured()) {
+        if (arena == null) {
+            plugin.getLogger().warning("Attempted to start game with null arena");
+            return null;
+        }
+        
+        if (!arena.isConfigured()) {
+            plugin.getLogger().warning("Attempted to start game with improperly configured arena: " + arena.getName());
+            
+            // Log specific missing configuration elements
+            if (arena.getTeams().isEmpty()) {
+                plugin.getLogger().warning("Arena " + arena.getName() + " has no teams");
+            }
+            
+            if (arena.getLobbySpawn() == null) {
+                plugin.getLogger().warning("Arena " + arena.getName() + " has no lobby spawn");
+            }
+            
+            if (arena.getSpectatorSpawn() == null) {
+                plugin.getLogger().warning("Arena " + arena.getName() + " has no spectator spawn");
+            }
+            
+            // Check for configured generators
+            boolean hasIron = false;
+            boolean hasGold = false;
+            boolean hasEmerald = false;
+            boolean hasTeamGen = false;
+            
+            for (GeneratorData generator : arena.getGenerators().values()) {
+                switch (generator.getType()) {
+                    case IRON -> hasIron = true;
+                    case GOLD -> hasGold = true;
+                    case TEAM -> hasTeamGen = true;
+                    case EMERALD -> hasEmerald = true;
+                }
+            }
+            
+            if (!hasIron && !hasTeamGen) plugin.getLogger().warning("Arena " + arena.getName() + " has no iron generators");
+            if (!hasGold && !hasTeamGen) plugin.getLogger().warning("Arena " + arena.getName() + " has no gold generators");
+            if (!hasEmerald) plugin.getLogger().warning("Arena " + arena.getName() + " has no emerald generators");
+            
             return null;
         }
         
         // Check if there's already a game for this arena
         if (activeGames.containsKey(arena.getName().toLowerCase())) {
+            plugin.getLogger().warning("Attempted to start game with arena that's already in use: " + arena.getName());
             return null;
         }
         
@@ -77,6 +117,7 @@ public class GameManager {
         activeGames.put(arena.getName().toLowerCase(), game);
         game.setup();
         
+        plugin.getLogger().info("Started new BedWars game with arena: " + arena.getName());
         return game;
     }
     

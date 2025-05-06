@@ -1118,8 +1118,7 @@ public class Game {
             }
         }
     }
-    
-    /**
+      /**
      * Get the team of a player
      * 
      * @param player The player
@@ -1128,6 +1127,89 @@ public class Game {
     public String getPlayerTeam(Player player) {
         if (player == null) return null;
         return playerTeams.get(player.getUniqueId());
+    }
+    
+    /**
+     * Reset and fix a bed at a specific location if it's broken or incorrectly placed.
+     * This is used as a fallback when a player interacts with a bed and encounters an error.
+     * 
+     * @param location The location of the bed block that was interacted with
+     */
+    public void resetBedAtLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return;
+        }
+        
+        // Find which team's bed is at or near this location
+        for (String teamName : arena.getTeams().keySet()) {
+            TeamData teamData = arena.getTeam(teamName);
+            if (teamData != null && teamData.getBedLocation() != null) {
+                Location bedLocation = teamData.getBedLocation().toBukkitLocation();
+                
+                // Check if this is close enough to the team's bed location (within 2 blocks)
+                if (bedLocation != null && 
+                    bedLocation.getWorld().equals(location.getWorld()) &&
+                    bedLocation.distance(location) < 3) {
+                    
+                    plugin.getLogger().info("Attempting to repair " + teamName + " team's bed after interaction issue");
+                    
+                    // Get the original bed direction based on the team's bed location yaw
+                    BlockFace direction = yawToFace(bedLocation.getYaw());
+                    
+                    // Get the appropriate bed color for this team
+                    Material bedMaterial = getTeamBedMaterial(teamData.getColor());
+                    
+                    // Clear a 3x3x1 area around the bed location to ensure no blocks are interfering
+                    Block centerBlock = bedLocation.getBlock();
+                    for (int x = -1; x <= 1; x++) {
+                        for (int z = -1; z <= 1; z++) {
+                            Block block = centerBlock.getRelative(x, 0, z);
+                            if (block.getType().name().contains("BED")) {
+                                block.setType(Material.AIR);
+                            }
+                        }
+                    }
+                    
+                    // Place a completely new bed
+                    Block bedBlock = bedLocation.getBlock();
+                    Block footBlock = bedLocation.getBlock().getRelative(direction.getOppositeFace());
+                    
+                    // Make sure both blocks are clear
+                    bedBlock.setType(Material.AIR);
+                    footBlock.setType(Material.AIR);
+                    
+                    // Place the bed with a different approach
+                    try {
+                        // First place both blocks as the bed material
+                        bedBlock.setType(bedMaterial);
+                        footBlock.setType(bedMaterial);
+                        
+                        // Configure the head part
+                        Bed bedData = (Bed) bedBlock.getBlockData();
+                        bedData.setPart(Bed.Part.HEAD);
+                        bedData.setFacing(direction);
+                        bedBlock.setBlockData(bedData);
+                        
+                        // Configure the foot part
+                        Bed footData = (Bed) footBlock.getBlockData();
+                        footData.setPart(Bed.Part.FOOT);
+                        footData.setFacing(direction);
+                        footBlock.setBlockData(footData);
+                        
+                        // Force update of both blocks
+                        bedBlock.getState().update(true, false);
+                        footBlock.getState().update(true, false);
+                        
+                        plugin.getLogger().info("Successfully repaired bed for team " + teamName);
+                    } catch (Exception e) {
+                        plugin.getLogger().severe("Failed to repair bed: " + e.getMessage());
+                    }
+                    
+                    // We found and tried to repair the bed, so return
+                    return;
+                }
+            }
+        }
     }
     
     /**
@@ -1335,28 +1417,63 @@ public class Game {
                             plugin.getLogger().info("Using fallback bed direction for " + teamName + " team");
                         }
                         
+                        // Make sure both blocks are clear before placing the bed
                         bedBlock.setType(Material.AIR);
                         footBlock.setType(Material.AIR);
+                          // We'll place the bed using a safer approach - placing both parts with a synchronized approach
+                        // to avoid the "air block" error
                         
-                        // Place the bed block (head part)
-                        bedBlock.setType(bedMaterial);
-                        
-                        // Set the bed direction
-                        Bed bedData = (Bed) bedBlock.getBlockData();
-                        bedData.setPart(Bed.Part.HEAD);
-                        bedData.setFacing(direction);
-                        bedBlock.setBlockData(bedData);
-                        
-                        // Place the foot part in the correct direction
-                        footBlock.setType(bedMaterial);
-                        
-                        Bed footData = (Bed) footBlock.getBlockData();
-                        footData.setPart(Bed.Part.FOOT);
-                        footData.setFacing(direction);
-                        footBlock.setBlockData(footData);
-                        
-                        plugin.getLogger().info("Placed " + teamData.getColor() + " bed for team " + teamName + 
+                        try {
+                            // First place both blocks as the bed material
+                            bedBlock.setType(bedMaterial);
+                            footBlock.setType(bedMaterial);
+                            
+                            // Configure the head part
+                            Bed bedData = (Bed) bedBlock.getBlockData();
+                            bedData.setPart(Bed.Part.HEAD);
+                            bedData.setFacing(direction);
+                            bedBlock.setBlockData(bedData);
+                            
+                            // Configure the foot part
+                            Bed footData = (Bed) footBlock.getBlockData();
+                            footData.setPart(Bed.Part.FOOT);
+                            footData.setFacing(direction);
+                            footBlock.setBlockData(footData);
+                            
+                            // Force update of both blocks
+                            bedBlock.getState().update(true, false);
+                            footBlock.getState().update(true, false);
+                        } catch (Exception e) {
+                            // If there's an error with the connected bed parts, try an alternative approach
+                            plugin.getLogger().warning("Error during bed placement, trying alternative method: " + e.getMessage());
+                            
+                            // Clear the blocks again
+                            bedBlock.setType(Material.AIR);
+                            footBlock.setType(Material.AIR);
+                            
+                            // Place head part first this time
+                            bedBlock.setType(bedMaterial);
+                            Bed bedData = (Bed) bedBlock.getBlockData();
+                            bedData.setPart(Bed.Part.HEAD);
+                            bedData.setFacing(direction);
+                            bedBlock.setBlockData(bedData);
+                            
+                            // Update the world
+                            bedBlock.getState().update(true, false);
+                            
+                            // Now place the foot part
+                            footBlock.setType(bedMaterial);
+                            Bed footData = (Bed) footBlock.getBlockData();
+                            footData.setPart(Bed.Part.FOOT);
+                            footData.setFacing(direction);
+                            footBlock.setBlockData(footData);
+                            
+                            // Update the world
+                            footBlock.getState().update(true, false);
+                        }
+                          plugin.getLogger().info("Placed " + teamData.getColor() + " bed for team " + teamName + 
                             " in direction " + direction + " (yaw: " + bedLocation.getYaw() + ")");
+                        plugin.getLogger().info("  Head block at: " + bedBlock.getLocation() + ", Foot block at: " + footBlock.getLocation());
                     } catch (Exception e) {
                         plugin.getLogger().warning("Error placing bed for team " + teamName + ": " + e.getMessage());
                     }
@@ -1378,8 +1495,7 @@ public class Game {
             }
             plugin.getLogger().info("Cleared all dropped items in arena " + arena.getName());
         }
-    }
-      /**
+    }    /**
      * Convert a yaw value to a BlockFace direction
      *
      * @param yaw The yaw value to convert
@@ -1390,8 +1506,16 @@ public class Game {
         yaw = (yaw % 360);
         if (yaw < 0) yaw += 360;
         
-        // Convert yaw to BlockFace
-        if (yaw >= 315 || yaw < 45) {
+        plugin.getLogger().info("Converting yaw " + yaw + " to BlockFace");
+        
+        // In Minecraft:
+        // 0 or 360 = South
+        // 90 = West
+        // 180 = North
+        // 270 = East
+        
+        // Beds are placed in the direction the player is facing
+        if ((yaw >= 315 && yaw <= 360) || (yaw >= 0 && yaw < 45)) {
             return BlockFace.SOUTH; // Player facing south (yaw 0)
         } else if (yaw >= 45 && yaw < 135) {
             return BlockFace.WEST; // Player facing west (yaw 90)

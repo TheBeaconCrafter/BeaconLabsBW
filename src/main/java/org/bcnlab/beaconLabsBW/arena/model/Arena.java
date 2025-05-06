@@ -96,11 +96,15 @@ public class Arena {
         boolean hasGold = false;
         boolean hasEmerald = false;
         boolean hasDiamond = false;
-        
-        for (GeneratorData generator : generators.values()) {
+          for (GeneratorData generator : generators.values()) {
             switch (generator.getType()) {
                 case IRON -> hasIron = true;
                 case GOLD -> hasGold = true;
+                case TEAM -> {
+                    // TEAM generators count as both iron and gold
+                    hasIron = true;
+                    hasGold = true;
+                }
                 case EMERALD -> hasEmerald = true;
                 case DIAMOND -> hasDiamond = true;
             }

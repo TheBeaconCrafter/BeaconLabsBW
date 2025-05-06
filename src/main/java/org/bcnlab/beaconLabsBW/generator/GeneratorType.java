@@ -6,6 +6,7 @@ package org.bcnlab.beaconLabsBW.generator;
 public enum GeneratorType {
     IRON,
     GOLD,
+    TEAM,  // Replaces individual IRON and GOLD generators for teams, upgradeable through forge upgrades
     EMERALD,
     DIAMOND
 }
