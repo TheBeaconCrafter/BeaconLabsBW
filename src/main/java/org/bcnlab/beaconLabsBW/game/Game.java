@@ -473,15 +473,18 @@ public class Game {
         player.getInventory().setChestplate(chestplate);
         player.getInventory().setLeggings(leggings);
         player.getInventory().setBoots(boots);
-    }
-      /**
+    }    /**
      * Give initial equipment to a player
      *
      * @param player The player
      */
     private void giveInitialEquipment(Player player) {
-        // Wooden sword
-        player.getInventory().addItem(new ItemStack(Material.WOODEN_SWORD));
+        // Don't give a wooden sword if player is Swordsman in ultimates mode
+        if (!(gameMode == GameMode.ULTIMATES && 
+              getPlayerUltimateClass(player.getUniqueId()) == org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.SWORDSMAN)) {
+            // Wooden sword
+            player.getInventory().addItem(new ItemStack(Material.WOODEN_SWORD));
+        }
         
         // No more wool blocks at the start - players should buy them from the shop
     }

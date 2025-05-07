@@ -34,10 +34,11 @@ public class UltimatesManager implements Listener {
     private final Map<UUID, Long> abilityCooldowns = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> healerTasks = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> frozenPlayers = new ConcurrentHashMap<>();
-    private final Map<UUID, Integer> kangarooCooldownTasks = new ConcurrentHashMap<>();
-    private BukkitTask builderWoolTask; // Task for Builder wool generation
-    
-    // Constants for ultimates
+    private final Map<UUID, Integer> kangarooCooldownTasks = new ConcurrentHashMap<>();    // Specialized Swordsman manager
+    private final SwordsmanManager swordsmanManager;
+    // Task for Builder wool generation
+    private BukkitTask builderWoolTask;
+      // Constants for ultimates
     private static final int SWORDSMAN_DASH_COOLDOWN = 10; // seconds
     private static final int HEALER_AURA_COOLDOWN = 15; // seconds
     private static final int FROZO_SLOWNESS_COOLDOWN = 20; // seconds
@@ -45,8 +46,10 @@ public class UltimatesManager implements Listener {
     private static final int GATHERER_DUPLICATION_CHANCE = 25; // percentage
     private static final int KANGAROO_JUMP_COOLDOWN = 10; // seconds
     private static final int BUILDER_BRIDGE_LENGTH = 6; // blocks
+    
     public UltimatesManager(BeaconLabsBW plugin) {
         this.plugin = plugin;
+        this.swordsmanManager = new SwordsmanManager(plugin);
         Bukkit.getPluginManager().registerEvents(this, plugin);
         
         // Start builder wool generation task - runs every 5 seconds
@@ -143,45 +146,23 @@ public class UltimatesManager implements Listener {
         }
 
         return true;
-    }
-
-    /**
+    }    /**
      * Activate Swordsman's dash ability
      */    private void activateSwordsmanDash(Player player) {
         // Set cooldown
         UUID playerId = player.getUniqueId();
         abilityCooldowns.put(playerId, System.currentTimeMillis() + (SWORDSMAN_DASH_COOLDOWN * 1000));
         
-        // Calculate dash direction - increased from 3.5 to 5.0 for longer dash
-        Vector direction = player.getLocation().getDirection().normalize().multiply(5.0).setY(0.3);
-        
-        // Apply dash
-        player.setVelocity(direction);
-        player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 40, 1));
-        
-        // Damage nearby players in the path
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            for (Player target : Bukkit.getOnlinePlayers()) {
-                if (target != player && target.getWorld() == player.getWorld() &&
-                    target.getLocation().distance(player.getLocation()) < 4.0) { // Increased from 3.0 to 4.0
-                    target.damage(7.0, player); // Increased from 6.0 to 7.0
-                    target.setVelocity(direction.clone().multiply(0.8)); // Increased knockback
-                    
-                    // Add hit effect
-                    target.getWorld().spawnParticle(Particle.CRIT, target.getLocation().add(0, 1, 0),
-                        15, 0.4, 0.4, 0.4, 0.1);
-                }
-            }
-        }, 5L);
-        
-        // Visual effects for dash - enhanced
-        player.getWorld().spawnParticle(Particle.SWEEP_ATTACK, player.getLocation(), 
-                                      10, 0.5, 0.5, 0.5, 0.1); // Increased from 5 to 10
-        player.getWorld().spawnParticle(Particle.CLOUD, player.getLocation(), 
-                                      15, 0.2, 0.2, 0.2, 0.1); // Added cloud effect
-        player.getWorld().playSound(player.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.2f);
-          // Set XP bar for cooldown display
-        startCooldownDisplay(player, SWORDSMAN_DASH_COOLDOWN);
+        // Use the SwordsmanManager to handle the dash
+        if (swordsmanManager.processSwordsmanDash(player)) {
+            // If the dash was performed (not a teleport-back)
+            startCooldownDisplay(player, SWORDSMAN_DASH_COOLDOWN);
+        } else {
+            // If a teleport-back was performed, we don't need to show the cooldown
+            // as the teleport-back option has been consumed
+            player.setExp(0.0f);
+            player.setLevel(0);
+        }
     }
 
     /**
@@ -215,11 +196,9 @@ public class UltimatesManager implements Listener {
                 for (Player target : Bukkit.getOnlinePlayers()) {
                     if (target != player && target.getWorld() == player.getWorld() &&
                         target.getLocation().distance(player.getLocation()) < 5.0 &&
-                        playerTeam.equals(plugin.getGameManager().getPlayerGame(target).getPlayerTeam(target))) {
-                        
-                        // Apply healing
-                        if (target.getHealth() < target.getMaxHealth()) {
-                            target.setHealth(Math.min(target.getHealth() + 1.0, target.getMaxHealth()));
+                        playerTeam.equals(plugin.getGameManager().getPlayerGame(target).getPlayerTeam(target))) {                          // Apply healing
+                        if (target.getHealth() < 20) { // Use standard max health
+                            target.setHealth(Math.min(target.getHealth() + 1.0, 20));
                             
                             // Visual effect on healed player
                             target.getWorld().spawnParticle(Particle.HEART, target.getLocation().add(0, 1, 0), 
@@ -558,8 +537,7 @@ public class UltimatesManager implements Listener {
             }
         }
     }
-    
-    /**
+      /**
      * Process Kangaroo double jump 
      */    public boolean processKangarooJump(Player player) {
         UUID playerId = player.getUniqueId();
@@ -571,9 +549,17 @@ public class UltimatesManager implements Listener {
         }
         
         // Set cooldown
-        abilityCooldowns.put(playerId, System.currentTimeMillis() + (KANGAROO_JUMP_COOLDOWN * 1000));        // Apply jump boost - increased from 0.8 to 1.5 for stronger boost
+        abilityCooldowns.put(playerId, System.currentTimeMillis() + (KANGAROO_JUMP_COOLDOWN * 1000));
+        
+        // Apply jump boost with forward momentum
         Vector velocity = player.getVelocity();
+        Vector direction = player.getLocation().getDirection().normalize().multiply(0.8); // Add forward momentum
+        
+        // Set vertical velocity (1.5) and add horizontal momentum
         velocity.setY(1.5);
+        velocity.add(new Vector(direction.getX(), 0, direction.getZ())); // Only add X and Z components
+        
+        // Apply the modified velocity
         player.setVelocity(velocity);
         
         // Add temporary fall damage immunity
@@ -586,7 +572,7 @@ public class UltimatesManager implements Listener {
         
         // Add trail particles
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
-            if (player.isOnline() && !player.isOnGround()) {
+            if (player.isOnline() && player.getVelocity().getY() > 0) { // Changed from isOnGround check to velocity check
                 player.getWorld().spawnParticle(Particle.CLOUD, player.getLocation().add(0, -0.2, 0), 
                                                1, 0, 0, 0, 0);
             } else {
@@ -815,5 +801,33 @@ public class UltimatesManager implements Listener {
     @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent event) {
         clearCooldownDisplay(event.getPlayer());
+    }
+    
+    /**
+     * Cleanup resources when plugin is disabled
+     */
+    public void cleanup() {
+        if (builderWoolTask != null) {
+            builderWoolTask.cancel();
+            builderWoolTask = null;
+        }
+        
+        // Cancel any active cooldown tasks
+        for (BukkitTask task : cooldownTasks.values()) {
+            task.cancel();
+        }
+        cooldownTasks.clear();
+        
+        // Cancel healer tasks
+        for (BukkitTask task : healerTasks.values()) {
+            task.cancel();
+        }
+        healerTasks.clear();
+        
+        // Cancel frozen player tasks
+        for (BukkitTask task : frozenPlayers.values()) {
+            task.cancel();
+        }
+        frozenPlayers.clear();
     }
 }

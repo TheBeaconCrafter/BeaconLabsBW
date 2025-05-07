@@ -67,10 +67,10 @@ public class ModeCommand implements CommandExecutor, TabCompleter {
         
         // Set the game mode
         game.setGameMode(newMode);
-        game.broadcastMessage(plugin.getPrefix() + "&e" + player.getName() + " &achanged the game mode to &e" + newMode.getDisplayName());
+        game.broadcastMessage("&e" + player.getName() + " &achanged the game mode to &e" + newMode.getDisplayName());
         
         if (newMode == GameMode.ULTIMATES) {
-            game.broadcastMessage(plugin.getPrefix() + "&aUltimates mode enabled! Select your ultimate class in the shop.");
+            game.broadcastMessage("&aUltimates mode enabled! Select your ultimate class in the shop.");
         }
         
         return true;

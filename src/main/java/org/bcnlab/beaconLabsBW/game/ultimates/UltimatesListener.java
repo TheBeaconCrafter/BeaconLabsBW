@@ -5,6 +5,7 @@ import org.bcnlab.beaconLabsBW.game.Game;
 import org.bcnlab.beaconLabsBW.game.GameMode;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.Particle;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -208,12 +209,15 @@ public class UltimatesListener implements Listener {
         if (playerClass == null) {
             return;
         }
-        
-        // Process class-specific damage events
+          // Process class-specific damage events
         if (playerClass == UltimateClass.KANGAROO && 
             event.getCause() == EntityDamageEvent.DamageCause.FALL) {
-            // Reduce fall damage by 50% for Kangaroo class
-            event.setDamage(event.getDamage() * 0.5);
+            // Give complete immunity to fall damage for Kangaroo class
+            event.setCancelled(true);
+            
+            // Show effect to indicate fall damage immunity
+            player.getWorld().spawnParticle(Particle.CLOUD, player.getLocation(), 
+                                         10, 0.3, 0.1, 0.3, 0.05);
         }
     }
 }

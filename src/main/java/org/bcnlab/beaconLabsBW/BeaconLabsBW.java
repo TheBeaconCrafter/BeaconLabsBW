@@ -7,6 +7,7 @@ import org.bcnlab.beaconLabsBW.command.ForceTeamCommand;
 import org.bcnlab.beaconLabsBW.command.ForceMapCommand;
 import org.bcnlab.beaconLabsBW.command.ForceStartCommand;
 import org.bcnlab.beaconLabsBW.command.ModeCommand;
+import org.bcnlab.beaconLabsBW.command.ShopVillagerCommand;
 import org.bcnlab.beaconLabsBW.config.ConfigManager;
 import org.bcnlab.beaconLabsBW.game.GameManager;
 import org.bcnlab.beaconLabsBW.generator.GeneratorManager;
@@ -16,6 +17,7 @@ import org.bcnlab.beaconLabsBW.listeners.PlayerListener;
 import org.bcnlab.beaconLabsBW.listeners.InventoryListener;
 import org.bcnlab.beaconLabsBW.shop.ShopManager;
 import org.bcnlab.beaconLabsBW.shop.TeamUpgradeManager;
+import org.bcnlab.beaconLabsBW.shop.VillagerManager;
 import org.bcnlab.beaconLabsBW.game.ultimates.UltimatesManager;
 import org.bcnlab.beaconLabsBW.game.ultimates.UltimatesListener;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
@@ -51,6 +53,7 @@ public final class BeaconLabsBW extends JavaPlugin {
     private ShopManager shopManager;
     private TeamUpgradeManager teamUpgradeManager;
     private UltimatesManager ultimatesManager;
+    private VillagerManager villagerManager;
     
     // Command handlers
     private BedwarsCommandHandler commandHandler;
@@ -58,6 +61,7 @@ public final class BeaconLabsBW extends JavaPlugin {
     private ForceMapCommand forceMapCommand;
     private ForceStartCommand forceStartCommand;
     private ModeCommand modeCommand;
+    private ShopVillagerCommand shopVillagerCommand;
 
     @Override
     public void onEnable() {
@@ -72,6 +76,7 @@ public final class BeaconLabsBW extends JavaPlugin {
         this.shopManager = new ShopManager(this);
         this.teamUpgradeManager = new TeamUpgradeManager(this);
         this.ultimatesManager = new UltimatesManager(this);
+        this.villagerManager = new VillagerManager(this);
         this.gameManager = new GameManager(this);
         
         // Register commands
@@ -96,6 +101,10 @@ public final class BeaconLabsBW extends JavaPlugin {
         getCommand("mode").setExecutor(modeCommand);
         getCommand("mode").setTabCompleter(modeCommand);
         
+        this.shopVillagerCommand = new ShopVillagerCommand(this);
+        getCommand("shopnpc").setExecutor(shopVillagerCommand);
+        getCommand("shopnpc").setTabCompleter(shopVillagerCommand);
+        
         // Register event listeners
         registerListeners();
         
@@ -119,6 +128,11 @@ public final class BeaconLabsBW extends JavaPlugin {
             arenaManager.saveAllArenas();
         }
         
+        // Clean up ultimates resources
+        if (ultimatesManager != null) {
+            ultimatesManager.cleanup();
+        }
+        
         getLogger().info(pluginPrefix + "BeaconLabsBW was disabled!");
     }
     
@@ -133,6 +147,7 @@ public final class BeaconLabsBW extends JavaPlugin {
         pm.registerEvents(new EntityListener(this), this);
         pm.registerEvents(new InventoryListener(this), this);
         pm.registerEvents(new UltimatesListener(this), this);
+        // The VillagerManager already registers itself as a listener in its constructor
         
         // Register and start our armor fix listener to handle armor durability issues
         org.bcnlab.beaconLabsBW.listeners.ArmorFixListener armorFixListener = new org.bcnlab.beaconLabsBW.listeners.ArmorFixListener(this);

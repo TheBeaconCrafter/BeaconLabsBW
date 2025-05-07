@@ -43,3 +43,7 @@ commands:
     description: 'Change the game mode between normal and ultimates'
     usage: '/mode <normal|ultimates>'
     permission: bedwars.play
+  shopnpc:
+    description: 'Manage shop NPCs (villagers) for item shops and team upgrades'
+    usage: '/shopnpc <place|remove|edit|list>'
+    permission: bedwars.admin

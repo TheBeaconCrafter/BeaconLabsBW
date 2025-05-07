@@ -1,6 +1,8 @@
 package org.bcnlab.beaconLabsBW.shop;
 
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
+import org.bcnlab.beaconLabsBW.game.Game;
+import org.bcnlab.beaconLabsBW.game.GameMode;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -118,16 +120,24 @@ public class ShopManager {
      * Open the shop for a player
      * 
      * @param player The player
-     */
-    public void openShop(Player player) {
+     */    public void openShop(Player player) {
         if (player == null) return;
         
         // Default to quick buy category
         ShopCategory category = playerCategory.getOrDefault(player.getUniqueId(), ShopCategory.QUICK_BUY);
+        
+        // Check if the selected category is ULTIMATES but player is not in an ultimates game
+        Game game = plugin.getGameManager().getPlayerGame(player);
+        boolean ultimatesEnabled = (game != null && game.getGameMode() == GameMode.ULTIMATES);
+        
+        if (category == ShopCategory.ULTIMATES && !ultimatesEnabled) {
+            // Switch to QUICK_BUY if trying to access ultimates in a non-ultimates game
+            category = ShopCategory.QUICK_BUY;
+        }
+        
         openCategoryMenu(player, category);
     }
-    
-    /**
+      /**
      * Open a specific category menu for a player
      * 
      * @param player The player
@@ -146,9 +156,17 @@ public class ShopManager {
             ChatColor.DARK_GRAY + "BedWars Shop: " + category.getDisplayName()
         );
         
+        // Check if player is in a game with ultimates enabled
+        Game game = plugin.getGameManager().getPlayerGame(player);
+        boolean ultimatesEnabled = (game != null && game.getGameMode() == GameMode.ULTIMATES);
+        
         // Add category selector items at the top
         int slot = 0;
         for (ShopCategory cat : ShopCategory.values()) {
+            // Skip ULTIMATES category if not in ultimates game mode
+            if (cat == ShopCategory.ULTIMATES && !ultimatesEnabled) {
+                continue;
+            }
             ItemStack categoryItem = createCategoryItem(cat, cat == category);
             inventory.setItem(slot++, categoryItem);
         }
@@ -210,11 +228,10 @@ public class ShopManager {
             
             List<String> lore = new ArrayList<>();
             lore.add(ChatColor.GRAY + shopItem.getDescription());
-            lore.add("");
-              String costText = ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + shopItem.getCost() + " ";
+            lore.add("");              String costText = ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + shopItem.getCost() + " ";
             Material currency = shopItem.getCurrency();
             
-            if (shopItem instanceof UltimateShopItem) {
+            if (shopItem.isFree()) {
                 lore.add(ChatColor.GREEN + "FREE");
             } else if (currency == null) {
                 lore.add(costText + "Unknown");
@@ -305,13 +322,14 @@ public class ShopManager {
      * @param item The item being purchased
      */    private void processPurchase(Player player, ShopItem item) {
         // Check if this is an ultimate class selection
-        if (item instanceof UltimateShopItem ultimateItem) {
+        if (item instanceof UltimateShopItem) {
+            UltimateShopItem ultimateItem = (UltimateShopItem) item;
             UltimateClassHandler.handleUltimateSelection(player, ultimateItem, plugin);
             return;
         }
         
-        // Check if player has enough currency
-        if (!hasCurrency(player, item.getCurrency(), item.getCost())) {
+        // Check if item is free or if player has enough currency
+        if (!item.isFree() && !hasCurrency(player, item.getCurrency(), item.getCost())) {
             String currencyName = getCurrencyName(item.getCurrency());
             MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have enough " + currencyName + "!");
             player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 0.5f);
@@ -705,5 +723,41 @@ public class ShopManager {
         }
         
         return Material.WHITE_WOOL;
+    }
+    
+    /**
+     * Open the team upgrades menu for a player
+     * 
+     * @param player The player to open the menu for
+     */
+    public void openTeamUpgradesMenu(Player player) {
+        // Check if player is in a game
+        Game game = plugin.getGameManager().getPlayerGame(player);
+        if (game == null) {
+            player.sendMessage(ChatColor.RED + "You must be in a game to use team upgrades!");
+            return;
+        }
+        
+        // Get player's team
+        String team = game.getPlayerTeam(player);
+        if (team == null) {
+            player.sendMessage(ChatColor.RED + "You must be on a team to use team upgrades!");
+            return;
+        }
+        
+        // Get the team's color for display
+        ChatColor teamColor = MessageUtils.getTeamChatColor(team);
+        
+        // Create the upgrades menu
+        Inventory upgradeMenu = Bukkit.createInventory(null, 36, teamColor + team + " Team Upgrades");
+        
+        // Let the TeamUpgradeManager handle populating the menu
+        plugin.getTeamUpgradeManager().populateTeamUpgradeMenu(upgradeMenu, player);
+        
+        // Play sound
+        player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_ENDER_CHEST_OPEN, 1.0f, 1.0f);
+        
+        // Open the menu
+        player.openInventory(upgradeMenu);
     }
 }

@@ -11,12 +11,11 @@ public class TeamUpgrade {
     
     private final String name;
     private final String description;
-    private final Material currency;
-    private final int[] tierCosts;
+    private final Material currency;    private final int[] tierCosts;
     private final int maxLevel;
     private final UpgradeType type;
-    
-    /**
+    private final Material material; // Added for display in menu
+      /**
      * Create a new team upgrade
      * 
      * @param name Upgrade name
@@ -32,6 +31,7 @@ public class TeamUpgrade {
         this.tierCosts = tierCosts;
         this.maxLevel = tierCosts.length;
         this.type = type;
+        this.material = determineDisplayMaterial(type);
     }
     
     /**
@@ -77,6 +77,33 @@ public class TeamUpgrade {
         return tierCosts[tier - 1];
     }
     
+    /**
+     * Determine a display material based on upgrade type
+     * 
+     * @param type The upgrade type
+     * @return Material for display
+     */
+    private Material determineDisplayMaterial(UpgradeType type) {
+        return switch (type) {
+            case SHARPNESS -> Material.DIAMOND_SWORD;
+            case PROTECTION -> Material.DIAMOND_CHESTPLATE;
+            case HASTE -> Material.GOLDEN_PICKAXE;
+            case HEALING -> Material.BEACON;
+            case FORGE -> Material.FURNACE;
+            case TRAP -> Material.REDSTONE;
+            default -> Material.DIAMOND;
+        };
+    }
+    
+    /**
+     * Get costs array for the upgrade
+     * 
+     * @return Array of costs for each tier
+     */
+    public int[] getCosts() {
+        return tierCosts;
+    }
+
     /**
      * Types of team upgrades
      */

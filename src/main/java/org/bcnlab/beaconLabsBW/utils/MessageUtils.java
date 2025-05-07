@@ -79,4 +79,26 @@ public class MessageUtils {
             default -> ChatColor.WHITE;
         };
     }
+    
+    /**
+     * Get the ChatColor associated with a team color
+     * 
+     * @param teamName The name of the team
+     * @return The ChatColor for that team
+     */
+    public static ChatColor getTeamChatColor(String teamName) {
+        if (teamName == null) return ChatColor.WHITE;
+        
+        return switch (teamName.toUpperCase()) {
+            case "RED" -> ChatColor.RED;
+            case "BLUE" -> ChatColor.BLUE;
+            case "GREEN" -> ChatColor.GREEN;
+            case "YELLOW" -> ChatColor.YELLOW;
+            case "AQUA" -> ChatColor.AQUA;
+            case "WHITE" -> ChatColor.WHITE;
+            case "PINK" -> ChatColor.LIGHT_PURPLE;
+            case "GRAY" -> ChatColor.GRAY;
+            default -> ChatColor.WHITE;
+        };
+    }
 }

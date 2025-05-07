@@ -18,6 +18,15 @@ public class ShopItem {
     private ShopCategory category;
     
     /**
+     * Check if the item is free
+     * 
+     * @return True if the item is free
+     */
+    public boolean isFree() {
+        return false;
+    }
+    
+    /**
      * Create a new shop item
      * 
      * @param name Item display name
