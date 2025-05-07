@@ -1,7 +1,10 @@
 package org.bcnlab.beaconLabsBW.command;
 
+import org.bcnlab.beaconLabsBW.arena.model.Arena;
+import org.bcnlab.beaconLabsBW.arena.model.SerializableLocation;
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
 import org.bcnlab.beaconLabsBW.shop.ShopVillager;
+import org.bcnlab.beaconLabsBW.shop.ShopVillagerData;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -11,7 +14,9 @@ import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -99,11 +104,38 @@ public class ShopVillagerCommand implements CommandExecutor, TabCompleter {
         
         String arenaName = (args.length > 2) ? args[2] : null;
         
-        // Place the villager at the player's location
-        plugin.getVillagerManager().spawnShopVillager(type, player.getLocation(), arenaName);
+        // Check if arena exists if specified
+        Arena arena = null;
+        if (arenaName != null) {
+            arena = plugin.getArenaManager().getArena(arenaName);
+            if (arena == null) {
+                player.sendMessage(ChatColor.RED + "Arena '" + arenaName + "' not found.");
+                return;
+            }
+        }
         
+        // Place the villager at the player's location
+        ShopVillager spawnedVillager = plugin.getVillagerManager().spawnShopVillager(type, player.getLocation(), arenaName);
+          // Save the villager data to the arena config if an arena was specified
+        if (arena != null && spawnedVillager != null) {
+            ShopVillagerData villagerData = new ShopVillagerData(type, new SerializableLocation(player.getLocation()));
+            // Use a unique key, e.g., based on location hash or a UUID
+            String key = type.name() + "_" + player.getLocation().hashCode(); 
+            
+            // Initialize shopVillagers map if it's null
+            if (arena.getShopVillagers() == null) {
+                arena.setShopVillagers(new HashMap<>());
+            }
+            
+            arena.getShopVillagers().put(key, villagerData);
+            player.sendMessage(ChatColor.GOLD + "Villager data added to arena '" + arenaName + "'. Use /bw save to make it permanent.");
+        } else if (arenaName != null) {
+            player.sendMessage(ChatColor.RED + "Failed to spawn villager or save data to arena.");
+            return; // Prevent success message if saving failed
+        }
+
         String message = ChatColor.GREEN + "Placed " + type.getDisplayName() + 
-            (arenaName != null ? " in arena " + arenaName : "");
+            (arenaName != null ? " in arena " + arenaName : " globally (not saved to arena)");
         player.sendMessage(message);
     }
 
@@ -111,21 +143,47 @@ public class ShopVillagerCommand implements CommandExecutor, TabCompleter {
         // Look for nearby villagers (within 2 blocks)
         ShopVillager nearestVillager = null;
         double closestDistance = Double.MAX_VALUE;
+        String villagerArenaName = null;
         
-        for (ShopVillager villager : plugin.getVillagerManager().getShopVillagers()) {
-            double distance = player.getLocation().distance(villager.getLocation());
-            
-            if (distance < 2.0 && distance < closestDistance) {
-                nearestVillager = villager;
-                closestDistance = distance;
-            }
-        }
+        // Need to determine which arena the nearest villager belongs to
+        // This requires VillagerManager to track this or iterate through arenas
+        // For simplicity, let's assume we can get this info (needs VillagerManager changes)
+        // Find nearest villager and its arena
+        nearestVillager = plugin.getVillagerManager().findNearestVillager(player.getLocation(), 2.0);
         
         if (nearestVillager == null) {
             player.sendMessage(ChatColor.RED + "No shop villagers found nearby.");
             return;
         }
         
+        // Find which arena this villager belongs to (needs enhancement in VillagerManager/ShopVillager)
+        villagerArenaName = plugin.getVillagerManager().getVillagerArenaName(nearestVillager);
+
+        // Remove data from the corresponding arena if it belongs to one
+        if (villagerArenaName != null) {
+            Arena arena = plugin.getArenaManager().getArena(villagerArenaName);
+            if (arena != null) {
+                // Find the key to remove - requires a way to link ShopVillager back to its key in Arena map
+                String keyToRemove = null;
+                SerializableLocation villagerLoc = new SerializableLocation(nearestVillager.getLocation());
+                for (Map.Entry<String, ShopVillagerData> entry : arena.getShopVillagers().entrySet()) {
+                    if (entry.getValue().getType() == nearestVillager.getType() && entry.getValue().getLocation().equals(villagerLoc)) {
+                        keyToRemove = entry.getKey();
+                        break;
+                    }
+                }
+                if (keyToRemove != null) {
+                    arena.getShopVillagers().remove(keyToRemove);
+                    player.sendMessage(ChatColor.GOLD + "Villager data removed from arena '" + villagerArenaName + "'. Use /bw save to make it permanent.");
+                } else {
+                    player.sendMessage(ChatColor.YELLOW + "Warning: Could not find villager data in arena '" + villagerArenaName + "' config.");
+                }
+            } else {
+                 player.sendMessage(ChatColor.YELLOW + "Warning: Arena '" + villagerArenaName + "' not found for removing villager data.");
+            }
+        }
+
+        // Remove the actual villager entity and from VillagerManager lists
         plugin.getVillagerManager().removeShopVillager(nearestVillager);
         player.sendMessage(ChatColor.GREEN + "Removed " + nearestVillager.getType().getDisplayName() + ".");
     }

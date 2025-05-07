@@ -69,9 +69,7 @@ public class UltimatesManager implements Listener {
      * @return The ultimate item
      */
     public ItemStack createUltimateItem(Player player, UltimateClass ultimateClass) {
-        ItemStack item;
-
-        switch (ultimateClass) {
+        ItemStack item;        switch (ultimateClass) {
             case SWORDSMAN -> item = createItem(Material.WOODEN_SWORD, ChatColor.RED + "Swordsman's Dash", 
                 ChatColor.GRAY + "Right-click while holding sword to dash forward", ChatColor.GRAY + "and damage enemies in your path");
                 
@@ -89,8 +87,7 @@ public class UltimatesManager implements Listener {
                 
             case DEMOLITION -> item = createItem(Material.FIRE_CHARGE, ChatColor.DARK_RED + "Demolition Charge", 
                 ChatColor.GRAY + "Right-click to ignite wool", ChatColor.GRAY + "Drops TNT on death");
-                
-            case KANGAROO -> item = null; // No item needed for Kangaroo
+                  case KANGAROO -> item = null; // Kangaroo doesn't need an item
                 
             default -> item = new ItemStack(Material.BARRIER);
         }

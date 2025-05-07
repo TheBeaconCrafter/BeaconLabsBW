@@ -8,6 +8,8 @@ import org.bukkit.World;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.bcnlab.beaconLabsBW.shop.ShopVillagerData;
+
 /**
  * Represents a BedWars arena
  */
@@ -40,6 +42,9 @@ public class Arena {
     
     @Expose
     private int maxPlayers = 16;
+    
+    @Expose
+    private Map<String, ShopVillagerData> shopVillagers = new HashMap<>();
     
     // Transient properties (not serialized)
     private transient World world;

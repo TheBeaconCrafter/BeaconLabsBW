@@ -1686,8 +1686,7 @@ public class Game {
                 if (ultimateItem != null) {
                     player.getInventory().addItem(ultimateItem);
                 }
-                
-                // Handle class-specific setup
+                  // Handle class-specific setup
                 switch (ultimateClass) {
                     case BUILDER:
                         // Give builder a small amount of wool to start with
@@ -1698,15 +1697,16 @@ public class Game {
                         // Enable double-jump capability
                         player.setAllowFlight(true);
                         break;
+                    // Other classes don't need special setup
+                    case SWORDSMAN, HEALER, FROZO, GATHERER, DEMOLITION:
+                        break;
                 }
                 
                 MessageUtils.sendMessage(player, "&aYou have switched to the &e" + ultimateClass.getFormattedName() + " &aultimate class!");
                 MessageUtils.sendMessage(player, "&e" + ultimateClass.getDescription());
             }
         }
-    }
-    
-    /**
+    }    /**
      * Check if an item is a specific ultimate class's item
      * 
      * @param item The item to check
@@ -1714,6 +1714,11 @@ public class Game {
      * @return true if the item belongs to the ultimate class
      */
     private boolean isUltimateItem(ItemStack item, UltimateClass ultimateClass) {
+        // Special case for Kangaroo which doesn't have an ultimate item
+        if (ultimateClass == UltimateClass.KANGAROO) {
+            return false; // Kangaroo doesn't use an item for its ability
+        }
+        
         if (item == null) return false;
         
         return switch (ultimateClass) {
@@ -1723,7 +1728,7 @@ public class Game {
             case BUILDER -> item.getType() == Material.BRICKS;
             case GATHERER -> item.getType() == Material.ENDER_CHEST;
             case DEMOLITION -> item.getType() == Material.FIRE_CHARGE;
-            case KANGAROO -> item.getType() == Material.RABBIT_FOOT;
+            case KANGAROO -> false; // Kangaroo doesn't use an item, but we need it in the switch for completeness
             default -> false;
         };
     }
@@ -1752,26 +1757,24 @@ public class Game {
             setPlayerUltimateClass(player.getUniqueId(), playerClass);
             MessageUtils.sendMessage(player, "&eYou have been randomly assigned the " + playerClass.getFormattedName() + " &eclass!");
         }
-        
-        // Create the ultimate ability item and give it to the player
+          // Create the ultimate ability item and give it to the player
         // First clear any existing ultimate items
         for (ItemStack item : player.getInventory().getContents()) {
             if (item != null && (item.getType() == Material.BLAZE_ROD || item.getType() == Material.GOLDEN_APPLE || 
                 item.getType() == Material.PACKED_ICE || item.getType() == Material.BRICKS || 
-                item.getType() == Material.ENDER_CHEST || item.getType() == Material.FIRE_CHARGE || 
-                item.getType() == Material.RABBIT_FOOT)) {
+                item.getType() == Material.ENDER_CHEST || item.getType() == Material.FIRE_CHARGE)) {
                 player.getInventory().remove(item);
             }
         }
-        
-        ItemStack ultimateItem = plugin.getUltimatesManager().createUltimateItem(player, playerClass);
-        player.getInventory().addItem(ultimateItem);
+          ItemStack ultimateItem = plugin.getUltimatesManager().createUltimateItem(player, playerClass);
+        if (ultimateItem != null) {
+            player.getInventory().addItem(ultimateItem);
+        }
         
         // Send instructions on how to use the ability
         MessageUtils.sendMessage(player, "&b&lULTIMATE ABILITY: &eYou have the " + playerClass.getFormattedName() + " &eability!");
         MessageUtils.sendMessage(player, "&e" + playerClass.getDescription());
-        
-        // Give additional items based on class
+          // Give additional items based on class
         switch (playerClass) {
             case BUILDER:
                 // First remove any team wool they might already have
@@ -1788,6 +1791,9 @@ public class Game {
                 // Enable double-jump capability
                 player.setAllowFlight(true);
                 break;
+            // Other classes don't need special setup
+            case SWORDSMAN, HEALER, FROZO, GATHERER, DEMOLITION:
+                break;
         }
     }
     
@@ -1796,8 +1802,7 @@ public class Game {
      * 
      * @param player The player who died
      * @param killer The player who killed them (can be null)
-     */
-    private void handleUltimateOnDeath(Player player, Player killer) {
+     */    private void handleUltimateOnDeath(Player player, Player killer) {
         UltimateClass playerClass = getPlayerUltimateClass(player.getUniqueId());
         if (playerClass == null) return;
         
@@ -1822,6 +1827,61 @@ public class Game {
                     MessageUtils.sendMessage(player, "&e&lKANGAROO: &aYou saved some resources in your inventory!");
                 }
                 break;
+                
+            // Add all remaining cases for completeness
+            case SWORDSMAN:
+            case HEALER:
+            case FROZO:
+            case BUILDER:
+            case GATHERER:
+                // These classes don't have special death effects
+                break;
         }
+    }
+
+    /**
+     * Add a player directly as a spectator.
+     * 
+     * @param player The player to add as a spectator.
+     * @return true if successfully added, false otherwise (e.g., already in game or game not running).
+     */
+    public boolean addSpectator(Player player) {
+        if (player == null) return false;
+        UUID playerId = player.getUniqueId();
+
+        // Only allow adding spectators to running games
+        if (state != GameState.RUNNING) {
+            plugin.getLogger().warning("Attempted to add spectator " + player.getName() + " to game " + gameId + " but state is " + state);
+            return false;
+        }
+
+        // Check if player is already participating or spectating
+        if (players.contains(playerId) || spectators.contains(playerId)) {
+            plugin.getLogger().warning("Attempted to add spectator " + player.getName() + " who is already in game " + gameId);
+            return false;
+        }
+
+        // Add to spectators set
+        spectators.add(playerId);
+
+        // Teleport to spectator spawn
+        SerializableLocation spectatorLoc = arena.getSpectatorSpawn();
+        if (spectatorLoc != null) {
+            Location location = spectatorLoc.toBukkitLocation();
+            if (location != null) {
+                player.teleport(location);
+            }
+        }
+
+        // Reset player state (will set spectator mode)
+        resetPlayer(player);
+
+        // Set up spectator scoreboard
+        scoreboardManager.setupScoreboard(player); // Ensure this handles spectators
+
+        MessageUtils.sendMessage(player, plugin.getPrefix() + "&aYou are now spectating the game!");
+        broadcastMessage("&e" + player.getName() + " &7is now spectating.");
+
+        return true;
     }
 }

@@ -11,9 +11,13 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.metadata.MetadataValue;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+
+import java.util.ArrayList;
+import java.util.UUID;
 
 /**
  * Represents a shop villager entity in BedWars
@@ -65,6 +69,15 @@ public class ShopVillager implements Listener {
     }
     
     /**
+     * Get the UUID of the underlying Villager entity.
+     *
+     * @return The UUID, or null if the entity doesn't exist or hasn't been spawned yet.
+     */
+    public UUID getEntityUUID() {
+        return (this.entity != null && this.entity.isValid()) ? this.entity.getUniqueId() : null;
+    }
+    
+    /**
      * Get the formatted name for this villager
      * 
      * @return The formatted display name
@@ -76,15 +89,26 @@ public class ShopVillager implements Listener {
     
     /**
      * Spawn the villager at the location
-     */
-    private void spawnVillager() {
+     */    private void spawnVillager() {
         World world = location.getWorld();
         if (world == null) return;
         
-        // Create villager entity
-        this.entity = (Villager) world.spawnEntity(location, EntityType.VILLAGER);
+        // Ensure the chunk is loaded before attempting to spawn
+        if (!world.isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4)) {
+            world.loadChunk(location.getBlockX() >> 4, location.getBlockZ() >> 4);
+        }
         
-        // Set properties
+        try {
+            // Create villager entity with custom metadata
+            this.entity = (Villager) world.spawnEntity(location, EntityType.VILLAGER);
+            
+            // Add metadata to identify this as a custom shop villager
+            this.entity.setMetadata("beaconlabs_shop", new org.bukkit.metadata.FixedMetadataValue(plugin, type.name()));
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error spawning shop villager: " + e.getMessage());
+            return;
+        }
+          // Set properties
         entity.setCustomName(name);
         entity.setCustomNameVisible(true);
         entity.setAI(false); // Always disable AI to prevent movement
@@ -93,11 +117,25 @@ public class ShopVillager implements Listener {
         entity.setInvulnerable(true);
         entity.setCanPickupItems(false); // Prevent picking up items
         
-        // Set villager type based on role
-        if (type == VillagerType.ITEM_SHOP) {
-            entity.setProfession(Villager.Profession.TOOLSMITH);
-        } else {
-            entity.setProfession(Villager.Profession.LIBRARIAN);
+        // Completely disable trading AI
+        try {
+            // Reset trades to prevent default trading GUI
+            if (entity.getRecipeCount() > 0) {
+                entity.setRecipes(new ArrayList<>());
+            }
+            
+            // Set villager type based on role but disable trading
+            if (type == VillagerType.ITEM_SHOP) {
+                entity.setProfession(Villager.Profession.TOOLSMITH);
+            } else {
+                entity.setProfession(Villager.Profession.LIBRARIAN);
+            }
+            
+            // Set to maximum level to prevent further AI modifications
+            entity.setVillagerLevel(5);
+            entity.setVillagerExperience(Integer.MAX_VALUE);
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error configuring villager AI: " + e.getMessage());
         }
         
         // Add visual effects
@@ -106,12 +144,11 @@ public class ShopVillager implements Listener {
             entity.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, Integer.MAX_VALUE, 0, false, false));
         }
     }
-    
-    /**
+      /**
      * Handle right-click interaction with the villager
      * 
      * @param player The player who clicked
-     * @param event The interaction event
+     * @param event The interaction event (can be null if coming from inventory event)
      */    
     public void handleInteraction(Player player, PlayerInteractEntityEvent event) {
         plugin.getLogger().info("[ShopVillager] handleInteraction called by " + player.getName() + " for type: " + type.getDisplayName());
@@ -119,7 +156,9 @@ public class ShopVillager implements Listener {
         // Prevent villager interaction while in edit mode
         if (isEditing) {
             plugin.getLogger().info("[ShopVillager] Interaction cancelled: isEditing is TRUE");
-            event.setCancelled(true);
+            if (event != null) {
+                event.setCancelled(true);
+            }
             player.sendMessage(ChatColor.RED + "This shop NPC is currently in edit mode.");
             return;
         }
@@ -173,16 +212,22 @@ public class ShopVillager implements Listener {
         
         // Update AI state
         if (entity != null && entity.isValid()) {
-            entity.setAI(false); // Always disable AI
+            entity.setAI(false); // Always disable AI for shop villagers.
             
             if (editing) {
                 // Add glowing effect in edit mode
                 entity.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, Integer.MAX_VALUE, 0, false, false));
+                entity.setCustomName(ChatColor.YELLOW + "[EDITING] " + type.getDisplayName());
             } else {
-                // Remove glowing effect in game mode
+                // Remove glowing effect and set normal name
                 entity.removePotionEffect(PotionEffectType.GLOWING);
+                entity.setCustomName(type.getDisplayName());
             }
         }
+    }
+    
+    public boolean isEditing() {
+        return isEditing;
     }
     
     /**

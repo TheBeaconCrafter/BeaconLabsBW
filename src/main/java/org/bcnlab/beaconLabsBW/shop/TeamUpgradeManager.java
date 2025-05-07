@@ -102,8 +102,13 @@ public class TeamUpgradeManager {
      * @param game The game they're in
      */
     public void openUpgradesMenu(Player player, Game game) {
+        plugin.getLogger().info("[TeamUpgradeManager] openUpgradesMenu called for player: " + player.getName());
         String teamName = game.getPlayerTeam(player);
-        if (teamName == null) return;
+        if (teamName == null) {
+             plugin.getLogger().info("[TeamUpgradeManager] Player " + player.getName() + " is not on a team. Aborting menu open.");
+             return;
+        }
+        plugin.getLogger().info("[TeamUpgradeManager] Player " + player.getName() + " is on team: " + teamName);
         
         // Create inventory
         Inventory inventory = Bukkit.createInventory(
@@ -132,6 +137,7 @@ public class TeamUpgradeManager {
         
         // Open the inventory
         player.openInventory(inventory);
+        plugin.getLogger().info("[TeamUpgradeManager] Opening inventory for player: " + player.getName());
     }
     
     /**

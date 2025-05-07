@@ -4,8 +4,11 @@ import lombok.Getter;
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
 import org.bcnlab.beaconLabsBW.arena.model.Arena;
 import org.bcnlab.beaconLabsBW.arena.model.GeneratorData;
+import org.bcnlab.beaconLabsBW.arena.model.TeamData;
+import org.bcnlab.beaconLabsBW.shop.ShopVillagerData;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
 import java.util.*;
@@ -90,6 +93,7 @@ public class GameManager {
             boolean hasGold = false;
             boolean hasEmerald = false;
             boolean hasTeamGen = false;
+            boolean hasDiamond = false; // Added diamond check
             
             for (GeneratorData generator : arena.getGenerators().values()) {
                 switch (generator.getType()) {
@@ -97,6 +101,7 @@ public class GameManager {
                     case GOLD -> hasGold = true;
                     case TEAM -> hasTeamGen = true;
                     case EMERALD -> hasEmerald = true;
+                    case DIAMOND -> hasDiamond = true;
                 }
             }
             
@@ -109,6 +114,14 @@ public class GameManager {
         
         // Check if there's already a game for this arena
         if (activeGames.containsKey(arena.getName().toLowerCase())) {
+            Game existingGame = activeGames.get(arena.getName().toLowerCase());
+            
+            // If the game is in WAITING state, we can return it to allow joining
+            if (existingGame.getState() == GameState.WAITING) {
+                plugin.getLogger().info("Joining existing waiting game for arena: " + arena.getName());
+                return existingGame;
+            }
+            
             plugin.getLogger().warning("Attempted to start game with arena that's already in use: " + arena.getName());
             return null;
         }
@@ -116,6 +129,9 @@ public class GameManager {
         Game game = new Game(plugin, arena);
         activeGames.put(arena.getName().toLowerCase(), game);
         game.setup();
+        
+        // Spawn villagers for this arena using the new delayed method
+        plugin.getVillagerManager().spawnArenaVillagersWithDelay(arena);
         
         plugin.getLogger().info("Started new BedWars game with arena: " + arena.getName());
         return game;
@@ -257,11 +273,26 @@ public class GameManager {
                 return false;
             }
         } else if (haveRunningGames()) {
-            // Don't allow new joins if there are running games unless it's a rejoin
-            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cA game is currently in progress. Please try again later.");
-            return false;
+            // A game is running. Attempt to add the player as a spectator.
+            Game runningGame = findRunningGame();
+            if (runningGame != null) {
+                if (addSpectatorToGame(player, runningGame)) {
+                    // Successfully added as spectator
+                    return true;
+                } else {
+                    // Failed to add as spectator (e.g., already in game?)
+                    MessageUtils.sendMessage(player, plugin.getPrefix() + "&cCould not join the current game as a spectator.");
+                    return false;
+                }
+            } else {
+                // This case should technically not happen if haveRunningGames() is true,
+                // but handle it defensively.
+                plugin.getLogger().warning("haveRunningGames() was true, but findRunningGame() returned null.");
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cCould not find the running game to spectate.");
+                return false;
+            }
         } else {
-            // No active waiting lobby, create a new one
+            // No active waiting lobby or running game, create a new lobby.
             waitingLobby = null; // Clear any old reference
             
             // Choose an arena for the new game
@@ -291,6 +322,18 @@ public class GameManager {
         return activeGames.values().stream()
             .anyMatch(game -> game.getState() == GameState.RUNNING);
     }
+
+    /**
+     * Find the currently running game, if any.
+     *
+     * @return The running Game instance, or null if no game is running.
+     */
+    private Game findRunningGame() {
+        return activeGames.values().stream()
+            .filter(game -> game.getState() == GameState.RUNNING)
+            .findFirst()
+            .orElse(null);
+    }
     
     /**
      * Choose the next arena to use
@@ -309,17 +352,32 @@ public class GameManager {
         if (arenaNames.isEmpty()) {
             return null;
         }
-        
-        // Convert to list for random access
+          // Convert to list for random access - arenas are available if:
+        // 1. They are configured
+        // 2. They are either not in use OR they have a game in WAITING state with room
         List<String> availableArenas = arenaNames.stream()
             .filter(name -> {
                 Arena arena = plugin.getArenaManager().getArena(name);
-                return arena != null && arena.isConfigured() && 
-                    !activeGames.containsKey(name.toLowerCase());
+                if (arena == null || !arena.isConfigured()) {
+                    return false;
+                }
+                
+                // Check if the arena is already in use
+                Game existingGame = activeGames.get(name.toLowerCase());
+                if (existingGame == null) {
+                    return true; // Arena not in use, it's available
+                }
+                
+                // If the existing game is in WAITING state and has room, consider it available
+                return existingGame.getState() == GameState.WAITING && 
+                       existingGame.getPlayers().size() < existingGame.getArena().getMaxPlayers();
             })
             .collect(Collectors.toList());
         
+        plugin.getLogger().info("[GameManager] Available arenas for random selection: " + availableArenas);
+        
         if (availableArenas.isEmpty()) {
+            plugin.getLogger().warning("[GameManager] No available configured arenas found to choose from!");
             return null;
         }
         
@@ -345,5 +403,34 @@ public class GameManager {
      */
     public Game getWaitingLobby() {
         return waitingLobby;
+    }
+
+    /**
+     * Add a player directly as a spectator to a running game.
+     *
+     * @param player The player to add.
+     * @param game The game to add the spectator to.
+     * @return true if successfully added, false otherwise.
+     */
+    public boolean addSpectatorToGame(Player player, Game game) {
+        if (player == null || game == null) {
+            return false;
+        }
+
+        // Ensure player isn't already mapped to a game
+        if (playerGameMap.containsKey(player.getUniqueId())) {
+            plugin.getLogger().warning("Attempted to add spectator " + player.getName() + " who is already mapped to a game.");
+            return false;
+        }
+
+        // Attempt to add spectator via the Game object
+        if (game.addSpectator(player)) {
+            // Map the player to the game they are spectating
+            playerGameMap.put(player.getUniqueId(), game);
+            return true;
+        } else {
+            // Adding spectator failed (e.g., game not running, player already in game)
+            return false;
+        }
     }
 }

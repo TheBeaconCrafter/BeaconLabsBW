@@ -313,14 +313,41 @@ public class GameScoreboard {
         playerScoreboards.clear();
         
         // Unregister teams from the main scoreboard
-        Scoreboard mainScoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
-        for (String teamName : game.getArena().getTeams().keySet()) {
-            Team scoreboardTeam = mainScoreboard.getTeam("bw_" + teamName);
-            if (scoreboardTeam != null) {
-                scoreboardTeam.unregister();
+        ScoreboardManager manager = Bukkit.getScoreboardManager();
+        if (manager != null) { // Check if manager is available
+            Scoreboard mainScoreboard = manager.getMainScoreboard();
+            if (mainScoreboard != null) { // Check if scoreboard is available
+                for (String teamName : game.getArena().getTeams().keySet()) {
+                    Team scoreboardTeam = mainScoreboard.getTeam("bw_" + teamName);
+                    if (scoreboardTeam != null) {
+                        try {
+                            scoreboardTeam.unregister();
+                        } catch (IllegalStateException e) {
+                            // Ignore if team is already unregistered (can happen during shutdown races)
+                            plugin.getLogger().fine("Scoreboard team bw_" + teamName + " was already unregistered during cleanup.");
+                        } catch (Exception e) {
+                             plugin.getLogger().warning("Unexpected error unregistering scoreboard team bw_" + teamName + ": " + e.getMessage());
+                        }
+                    }
+                }
+                
+                // Also cleanup health display
+                 Objective healthObj = mainScoreboard.getObjective("bwhealth");
+                if (healthObj != null) {
+                    try {
+                        healthObj.unregister();
+                    } catch (Exception e) {
+                         plugin.getLogger().warning("Unexpected error unregistering health objective: " + e.getMessage());
+                    }
+                }
+            } else {
+                plugin.getLogger().warning("Main scoreboard was null during cleanup.");
             }
+        } else {
+            plugin.getLogger().warning("ScoreboardManager was null during cleanup (likely during shutdown).");
         }
-    }    /**
+    }
+    /**
      * Set up the health display below players' names
      */
     public void setupPlayerHealthDisplays() {

@@ -144,7 +144,11 @@ public class ShopManager {
      * @param category The category
      */
     public void openCategoryMenu(Player player, ShopCategory category) {
-        if (player == null || category == null) return;
+        plugin.getLogger().info("[ShopManager] openCategoryMenu called for player: " + player.getName() + " with category: " + category.name());
+        if (player == null || category == null) {
+             plugin.getLogger().info("[ShopManager] Aborting menu open: player or category is null.");
+             return;
+        }
         
         // Store player's current category
         playerCategory.put(player.getUniqueId(), category);
@@ -186,6 +190,7 @@ public class ShopManager {
         
         // Open the inventory
         player.openInventory(inventory);
+        plugin.getLogger().info("[ShopManager] Opening inventory for player: " + player.getName());
     }
     
     /**
