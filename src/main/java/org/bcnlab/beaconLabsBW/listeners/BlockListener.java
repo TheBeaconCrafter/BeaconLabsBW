@@ -125,7 +125,9 @@ public class BlockListener implements Listener {
                 event.setCancelled(true);
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks during the game!");
                 return;
-            }            // Check if this is a bed block (handled by PlayerListener)
+            }
+            
+            // Check if this is a bed block (handled by PlayerListener)
             if (isBedBlock(block.getType())) {
                 // Cancel the event - PlayerListener will handle the bed breaking
                 event.setCancelled(true);
@@ -137,14 +139,9 @@ public class BlockListener implements Listener {
             if (game.isPlacedBlock(block)) {
                 return;
             } 
-            // Don't allow breaking blocks that weren't placed by players, even if they're valid shop blocks
-            else if (isBreakableBlock(block.getType())) {
-                event.setCancelled(true);
-                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks placed by players!");
-                return;
-            }
+            // Don't allow breaking blocks that weren't placed by players, even if they're OP
             else {
-                // Prevent breaking original map blocks
+                // Prevent breaking original map blocks for ALL players, including OP
                 event.setCancelled(true);
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks placed by players!");
                 return;

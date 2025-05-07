@@ -40,20 +40,19 @@ public class GameManager {
             return;
         }
         
-        // Try to find a configured arena
-        Arena arena = null;
-        for (String arenaName : arenaNames) {
-            Arena candidate = plugin.getArenaManager().getArena(arenaName);
-            if (candidate != null && candidate.isConfigured()) {
-                arena = candidate;
-                break;
-            }
-        }
+        // Filter for configured arenas
+        List<Arena> configuredArenas = arenaNames.stream()
+            .map(name -> plugin.getArenaManager().getArena(name))
+            .filter(candidate -> candidate != null && candidate.isConfigured())
+            .collect(Collectors.toList());
         
-        if (arena == null) {
+        if (configuredArenas.isEmpty()) {
             plugin.getLogger().info("No properly configured arenas found. Edit mode activated.");
             return;
         }
+        
+        // Choose a random configured arena
+        Arena arena = configuredArenas.get(ThreadLocalRandom.current().nextInt(configuredArenas.size()));
         
         startGame(arena);
         plugin.getLogger().info("Auto-started BedWars game with arena: " + arena.getName());
@@ -128,9 +127,22 @@ public class GameManager {
      */
     public void endGame(Game game) {
         if (game == null) return;
-        
-        // Remove game
-        activeGames.remove(game.getArena().getName().toLowerCase());
+
+        String arenaNameKey = game.getArena().getName().toLowerCase();
+        // Check if the game is actually in activeGames before trying to remove
+        if (!activeGames.containsKey(arenaNameKey) && playerGameMap.values().stream().noneMatch(g -> g.equals(game))) {
+            // If it's not in activeGames and no player is mapped to it, it might have already been ended.
+            // We can still proceed with cleanup if needed, or just log and return.
+            plugin.getLogger().info("GameManager.endGame called for game " + game.getGameId() + " which is not in activeGames or playerGameMap.");
+            // Optionally, ensure cleanup if game state indicates it hasn't been fully cleaned
+            if (game.getState() != GameState.WAITING) { // Assuming WAITING is the truly cleaned state
+                 game.cleanup(); // Ensure cleanup is called
+            }
+            return; // Or decide if further actions are needed for already-ended games
+        }
+
+        plugin.getLogger().info("Ending game: " + game.getGameId() + " for arena: " + arenaNameKey);
+        activeGames.remove(arenaNameKey);
         
         // Remove player mappings
         for (UUID playerId : game.getPlayers()) {

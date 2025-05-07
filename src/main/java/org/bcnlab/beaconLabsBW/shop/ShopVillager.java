@@ -87,9 +87,11 @@ public class ShopVillager implements Listener {
         // Set properties
         entity.setCustomName(name);
         entity.setCustomNameVisible(true);
-        entity.setAI(!isEditing); // Disable AI in edit mode
+        entity.setAI(false); // Always disable AI to prevent movement
+        entity.setSilent(true); // Make villager silent
         entity.setPersistent(true);
         entity.setInvulnerable(true);
+        entity.setCanPickupItems(false); // Prevent picking up items
         
         // Set villager type based on role
         if (type == VillagerType.ITEM_SHOP) {
@@ -110,19 +112,35 @@ public class ShopVillager implements Listener {
      * 
      * @param player The player who clicked
      * @param event The interaction event
-     */    public void handleInteraction(Player player, PlayerInteractEntityEvent event) {
+     */    
+    public void handleInteraction(Player player, PlayerInteractEntityEvent event) {
+        plugin.getLogger().info("[ShopVillager] handleInteraction called by " + player.getName() + " for type: " + type.getDisplayName());
+
         // Prevent villager interaction while in edit mode
         if (isEditing) {
+            plugin.getLogger().info("[ShopVillager] Interaction cancelled: isEditing is TRUE");
             event.setCancelled(true);
             player.sendMessage(ChatColor.RED + "This shop NPC is currently in edit mode.");
             return;
         }
-        
+        plugin.getLogger().info("[ShopVillager] isEditing is FALSE");
+
+        // Get player's game
+        org.bcnlab.beaconLabsBW.game.Game game = plugin.getGameManager().getPlayerGame(player);
+        if (game == null) {
+            plugin.getLogger().info("[ShopVillager] Interaction cancelled: Player is not in a game.");
+            player.sendMessage(ChatColor.RED + "You must be in a game to use this!");
+            return;
+        }
+        plugin.getLogger().info("[ShopVillager] Player is in game: " + game.getGameId());
+
         // Open appropriate menu
         if (type == VillagerType.ITEM_SHOP) {
+            plugin.getLogger().info("[ShopVillager] Opening ITEM_SHOP for " + player.getName());
             plugin.getShopManager().openCategoryMenu(player, ShopCategory.QUICK_BUY);
-        } else {
-            plugin.getShopManager().openTeamUpgradesMenu(player);
+        } else { // TEAM_UPGRADES
+            plugin.getLogger().info("[ShopVillager] Opening TEAM_UPGRADES for " + player.getName());
+            plugin.getTeamUpgradeManager().openUpgradesMenu(player, game);
         }
     }
     
@@ -155,7 +173,7 @@ public class ShopVillager implements Listener {
         
         // Update AI state
         if (entity != null && entity.isValid()) {
-            entity.setAI(!editing);
+            entity.setAI(false); // Always disable AI
             
             if (editing) {
                 // Add glowing effect in edit mode

@@ -15,6 +15,7 @@ import org.bcnlab.beaconLabsBW.listeners.BlockListener;
 import org.bcnlab.beaconLabsBW.listeners.EntityListener;
 import org.bcnlab.beaconLabsBW.listeners.PlayerListener;
 import org.bcnlab.beaconLabsBW.listeners.InventoryListener;
+import org.bcnlab.beaconLabsBW.listeners.BlockPhysicsListener;
 import org.bcnlab.beaconLabsBW.shop.ShopManager;
 import org.bcnlab.beaconLabsBW.shop.TeamUpgradeManager;
 import org.bcnlab.beaconLabsBW.shop.VillagerManager;
@@ -147,6 +148,7 @@ public final class BeaconLabsBW extends JavaPlugin {
         pm.registerEvents(new EntityListener(this), this);
         pm.registerEvents(new InventoryListener(this), this);
         pm.registerEvents(new UltimatesListener(this), this);
+        pm.registerEvents(new BlockPhysicsListener(this), this); // Register the new block physics listener
         // The VillagerManager already registers itself as a listener in its constructor
         
         // Register and start our armor fix listener to handle armor durability issues

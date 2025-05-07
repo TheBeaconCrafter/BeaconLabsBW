@@ -96,30 +96,66 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
     }
     
     private void showHelp(Player player) {
-        MessageUtils.sendMessage(player, "&8------- &4BeaconLabsBW &8-------");
+        MessageUtils.sendMessage(player, "&8&l=== &6&lBeaconLabsBW Commands &8&l===");
+        
+        // Player commands section
+        MessageUtils.sendMessage(player, "\n&e&lPlayer Commands:");
+        MessageUtils.sendMessage(player, "&6/bw join [arena] &7- Join a BedWars game");
+        MessageUtils.sendMessage(player, "&6/bw leave &7- Leave the current game");
+        MessageUtils.sendMessage(player, "&6/bw shop &7- Open item shop (during game)");
+        MessageUtils.sendMessage(player, "&6/bw upgrades &7- Open team upgrades (during game)");
+        MessageUtils.sendMessage(player, "&6/mode <normal|ultimates> &7- Set game mode (in lobby)");
         
         if (player.hasPermission("bedwars.admin")) {
-            MessageUtils.sendMessage(player, "&e/bw create <name> &7- Create a new arena");
-            MessageUtils.sendMessage(player, "&e/bw delete <name> &7- Delete an arena");
-            MessageUtils.sendMessage(player, "&e/bw list &7- List available arenas");
-            MessageUtils.sendMessage(player, "&e/bw edit <name> &7- Edit an arena");
-            MessageUtils.sendMessage(player, "&e/bw setspawn <team> &7- Set team spawn");
-            MessageUtils.sendMessage(player, "&e/bw setbed <team> &7- Set team bed");
-            MessageUtils.sendMessage(player, "&e/bw setlobby &7- Set lobby spawn");
-            MessageUtils.sendMessage(player, "&e/bw setspectator &7- Set spectator spawn");
-            MessageUtils.sendMessage(player, "&e/bw addteam <name> <color> &7- Add a team");
-            MessageUtils.sendMessage(player, "&e/bw addgenerator <type> [team] &7- Add a generator");
-            MessageUtils.sendMessage(player, "&e/bw removegenerator &7- Remove nearest generator");
-            MessageUtils.sendMessage(player, "&e/bw save &7- Save arena changes");            MessageUtils.sendMessage(player, "&e/bw start <arena> &7- Force start a game");
-            MessageUtils.sendMessage(player, "&e/bw stop <arena> &7- Force stop a game");            MessageUtils.sendMessage(player, "&e/forceteam [player] <team> &7- Force player onto team");
-            MessageUtils.sendMessage(player, "&e/forcemap <arena> &7- Change map of waiting lobby");
-            MessageUtils.sendMessage(player, "&e/forcestart &7- Reduce countdown to 3 seconds");
+            // Arena management section
+            MessageUtils.sendMessage(player, "\n&e&lArena Management:");
+            MessageUtils.sendMessage(player, "&6/bw create <name> &7- Create a new arena");
+            MessageUtils.sendMessage(player, "&6/bw delete <arena> &7- Delete an arena");
+            MessageUtils.sendMessage(player, "&6/bw edit <arena> &7- Edit an arena");
+            MessageUtils.sendMessage(player, "&6/bw save &7- Save the arena you're editing");
+            MessageUtils.sendMessage(player, "&6/bw list &7- List all available arenas");
+            
+            // Team setup section
+            MessageUtils.sendMessage(player, "\n&e&lTeam Setup:");
+            MessageUtils.sendMessage(player, "&6/bw addteam <name> <color> &7- Add a team");
+            MessageUtils.sendMessage(player, "&6/bw setspawn <team> &7- Set a team's spawn point");
+            MessageUtils.sendMessage(player, "&6/bw setbed <team> &7- Set a team's bed location");
+            
+            // Resource generators section
+            MessageUtils.sendMessage(player, "\n&e&lResource Generators:");
+            MessageUtils.sendMessage(player, "&6/bw addgenerator <type> [team] &7- Add a resource generator");
+            MessageUtils.sendMessage(player, "&6/bw removegenerator &7- Remove nearest generator");
+            
+            // Location setup section
+            MessageUtils.sendMessage(player, "\n&e&lLocation Setup:");
+            MessageUtils.sendMessage(player, "&6/bw setlobby &7- Set the main lobby");
+            MessageUtils.sendMessage(player, "&6/bw setspectator &7- Set spectator spawn");
+            
+            // Shop villagers section
+            MessageUtils.sendMessage(player, "\n&e&lShop Villagers:");
+            MessageUtils.sendMessage(player, "&6/shopnpc place <type> <arena> &7- Place shop villager (itemshop/teamupgrades)");
+            MessageUtils.sendMessage(player, "&6/shopnpc remove &7- Remove nearest shop villager");
+            MessageUtils.sendMessage(player, "&6/shopnpc list &7- List all shop villagers");
+            MessageUtils.sendMessage(player, "&6/shopnpc edit <true|false> &7- Toggle edit mode for villagers");
+            
+            // Game control section
+            MessageUtils.sendMessage(player, "\n&e&lGame Controls:");
+            MessageUtils.sendMessage(player, "&6/bw start <arena> &7- Force start a specific arena");
+            MessageUtils.sendMessage(player, "&6/bw stop <arena> &7- Force stop a specific arena");
+            MessageUtils.sendMessage(player, "&6/forceteam [player] <team> &7- Force a player onto a team");
+            MessageUtils.sendMessage(player, "&6/forcemap <arena> &7- Switch the waiting lobby to a map");
+            MessageUtils.sendMessage(player, "&6/forcestart &7- Reduce countdown timer to 3 seconds");
         }
         
-        MessageUtils.sendMessage(player, "&e/bw join [arena] &7- Join a game");
-        MessageUtils.sendMessage(player, "&e/bw leave &7- Leave current game");
-        MessageUtils.sendMessage(player, "&e/bw shop &7- Open shop (during game)");
-        MessageUtils.sendMessage(player, "&e/bw upgrades &7- Open team upgrades (during game)");
+        // Ultimate classes info
+        MessageUtils.sendMessage(player, "\n&e&lUltimate Classes:");
+        MessageUtils.sendMessage(player, "&6Swordsman &7- Dash attack with return ability");
+        MessageUtils.sendMessage(player, "&6Builder &7- Fast bridging and wool generation");
+        MessageUtils.sendMessage(player, "&6Healer &7- Team healing in small radius");
+        MessageUtils.sendMessage(player, "&6Kangaroo &7- Double jump ability");
+        MessageUtils.sendMessage(player, "&6Gatherer &7- Chance to duplicate resources");
+        MessageUtils.sendMessage(player, "&6Frozo &7- Slow enemies in a radius");
+        MessageUtils.sendMessage(player, "&6Demolition &7- Burn wool and drop TNT on death");
     }
     
     private void handleCreate(Player player, String[] args) {
@@ -790,8 +826,11 @@ public class BedwarsCommandHandler implements CommandExecutor, TabCompleter {
             return;
         }
         
-        // End the game
-        game.endGame(null);
+        // End the game via Game.endGame() which handles state, player kicking, etc.
+        game.endGame(null); 
+        // Also, immediately notify GameManager to remove it from active lists for edit/join purposes
+        plugin.getGameManager().endGame(game);
+        
         MessageUtils.sendMessage(player, plugin.getPrefix() + "&aGame for arena &e" + arenaName + " &astopped.");
     }
     
