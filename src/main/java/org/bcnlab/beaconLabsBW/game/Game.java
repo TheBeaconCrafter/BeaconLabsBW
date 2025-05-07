@@ -579,8 +579,7 @@ public class Game {
                 player.teleport(location);
             }
         }
-    }
-      /**
+    }    /**
      * Reset a player's state
      *
      * @param player The player
@@ -601,6 +600,11 @@ public class Game {
         // Disable flight (for Kangaroo ultimate)
         player.setAllowFlight(false);
         player.setFlying(false);
+        
+        // Clear cooldown display if in ultimates mode
+        if (gameMode == GameMode.ULTIMATES) {
+            plugin.getUltimatesManager().clearCooldownDisplay(player);
+        }
         
         // Use survival mode for active players, spectator for spectators
         if (spectators.contains(player.getUniqueId())) {
@@ -1635,12 +1639,77 @@ public class Game {
      */
     public void setPlayerUltimateClass(UUID playerId, UltimateClass ultimateClass) {
         if (gameMode == GameMode.ULTIMATES) {
+            // Remove old ultimate items if player had a class before
+            UltimateClass oldClass = playerUltimateClasses.get(playerId);
+            if (oldClass != null) {
+                Player player = Bukkit.getPlayer(playerId);
+                if (player != null) {
+                    // Remove old ultimate item
+                    for (ItemStack item : player.getInventory().getContents()) {
+                        if (item != null && isUltimateItem(item, oldClass)) {
+                            player.getInventory().remove(item);
+                        }
+                    }
+                    
+                    // Remove Kangaroo flight if they were Kangaroo
+                    if (oldClass == UltimateClass.KANGAROO) {
+                        player.setAllowFlight(false);
+                        player.setFlying(false);
+                    }
+                }
+            }
+            
+            // Set new class
             playerUltimateClasses.put(playerId, ultimateClass);
+            
+            // Give new ultimate items
             Player player = Bukkit.getPlayer(playerId);
             if (player != null) {
-                MessageUtils.sendMessage(player, "&aYou have selected the &e" + ultimateClass.getFormattedName() + " &aultimate class!");
+                // Create and give new ultimate item
+                ItemStack ultimateItem = plugin.getUltimatesManager().createUltimateItem(player, ultimateClass);
+                if (ultimateItem != null) {
+                    player.getInventory().addItem(ultimateItem);
+                }
+                
+                // Handle class-specific setup
+                switch (ultimateClass) {
+                    case BUILDER:
+                        // Give builder a small amount of wool to start with
+                        ItemStack wool = new ItemStack(getTeamWoolMaterial(playerTeams.get(playerId)), 16);
+                        player.getInventory().addItem(wool);
+                        break;
+                    case KANGAROO:
+                        // Enable double-jump capability
+                        player.setAllowFlight(true);
+                        break;
+                }
+                
+                MessageUtils.sendMessage(player, "&aYou have switched to the &e" + ultimateClass.getFormattedName() + " &aultimate class!");
+                MessageUtils.sendMessage(player, "&e" + ultimateClass.getDescription());
             }
         }
+    }
+    
+    /**
+     * Check if an item is a specific ultimate class's item
+     * 
+     * @param item The item to check
+     * @param ultimateClass The ultimate class to check against
+     * @return true if the item belongs to the ultimate class
+     */
+    private boolean isUltimateItem(ItemStack item, UltimateClass ultimateClass) {
+        if (item == null) return false;
+        
+        return switch (ultimateClass) {
+            case SWORDSMAN -> item.getType() == Material.BLAZE_ROD;
+            case HEALER -> item.getType() == Material.GOLDEN_APPLE;
+            case FROZO -> item.getType() == Material.PACKED_ICE;
+            case BUILDER -> item.getType() == Material.BRICKS;
+            case GATHERER -> item.getType() == Material.ENDER_CHEST;
+            case DEMOLITION -> item.getType() == Material.FIRE_CHARGE;
+            case KANGAROO -> item.getType() == Material.RABBIT_FOOT;
+            default -> false;
+        };
     }
     
     /**
@@ -1657,8 +1726,7 @@ public class Game {
      * Give ultimate ability items to a player based on their selected class
      * 
      * @param player The player to give items to
-     */
-    private void giveUltimateItems(Player player) {
+     */    private void giveUltimateItems(Player player) {
         // Check if player has selected an ultimate class
         UltimateClass playerClass = getPlayerUltimateClass(player.getUniqueId());
         
@@ -1670,6 +1738,16 @@ public class Game {
         }
         
         // Create the ultimate ability item and give it to the player
+        // First clear any existing ultimate items
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && (item.getType() == Material.BLAZE_ROD || item.getType() == Material.GOLDEN_APPLE || 
+                item.getType() == Material.PACKED_ICE || item.getType() == Material.BRICKS || 
+                item.getType() == Material.ENDER_CHEST || item.getType() == Material.FIRE_CHARGE || 
+                item.getType() == Material.RABBIT_FOOT)) {
+                player.getInventory().remove(item);
+            }
+        }
+        
         ItemStack ultimateItem = plugin.getUltimatesManager().createUltimateItem(player, playerClass);
         player.getInventory().addItem(ultimateItem);
         
@@ -1680,6 +1758,12 @@ public class Game {
         // Give additional items based on class
         switch (playerClass) {
             case BUILDER:
+                // First remove any team wool they might already have
+                for (ItemStack item : player.getInventory().getContents()) {
+                    if (item != null && item.getType().name().contains("WOOL")) {
+                        player.getInventory().remove(item);
+                    }
+                }
                 // Give builder a small amount of wool to start with
                 ItemStack wool = new ItemStack(getTeamWoolMaterial(playerTeams.get(player.getUniqueId())), 16);
                 player.getInventory().addItem(wool);

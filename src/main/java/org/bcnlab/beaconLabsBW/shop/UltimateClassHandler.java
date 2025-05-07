@@ -35,12 +35,6 @@ public class UltimateClassHandler {
             return;
         }
         
-        // Check if the game is running (can't change class after game starts)
-        if (game.getState() == GameState.RUNNING) {
-            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cCannot change ultimate class after the game has started.");
-            return;
-        }
-        
         // Set the player's ultimate class
         game.setPlayerUltimateClass(player.getUniqueId(), ultimateItem.getUltimateClass());
         

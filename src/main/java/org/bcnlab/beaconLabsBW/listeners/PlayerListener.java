@@ -5,6 +5,7 @@ import org.bcnlab.beaconLabsBW.arena.model.Arena;
 import org.bcnlab.beaconLabsBW.arena.model.SerializableLocation;
 import org.bcnlab.beaconLabsBW.arena.model.TeamData;
 import org.bcnlab.beaconLabsBW.game.Game;
+import org.bcnlab.beaconLabsBW.game.GameMode;
 import org.bcnlab.beaconLabsBW.game.GameState;
 import org.bcnlab.beaconLabsBW.shop.ShopItem;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
@@ -59,10 +60,15 @@ public class PlayerListener implements Listener {
             }
         }, 10L);
     }
-    
-    @EventHandler
+      @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        
+        // Clear any active cooldown display
+        if (plugin.getGameManager().getPlayerGame(player) != null && 
+            plugin.getGameManager().getPlayerGame(player).getGameMode() == GameMode.ULTIMATES) {
+            plugin.getUltimatesManager().clearCooldownDisplay(player);
+        }
         
         // Remove from any games
         plugin.getGameManager().removePlayerFromGame(player);
@@ -72,14 +78,18 @@ public class PlayerListener implements Listener {
             plugin.getArenaManager().stopEditing(player);
         }
     }
-    
-    @EventHandler(priority = EventPriority.HIGHEST)
+      @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
         Player killer = player.getKiller();
         
         Game game = plugin.getGameManager().getPlayerGame(player);
         if (game != null) {
+            // Clear any active cooldown display
+            if (game.getGameMode() == GameMode.ULTIMATES) {
+                plugin.getUltimatesManager().clearCooldownDisplay(player);
+            }
+            
             // Clear drops in the game
             event.getDrops().clear();
             
@@ -93,13 +103,17 @@ public class PlayerListener implements Listener {
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> player.spigot().respawn(), 2L);
         }
     }
-    
-    @EventHandler
+      @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
         Game game = plugin.getGameManager().getPlayerGame(player);
         
         if (game != null) {
+            // Clear any active cooldown display on respawn
+            if (game.getGameMode() == GameMode.ULTIMATES) {
+                plugin.getUltimatesManager().clearCooldownDisplay(player);
+            }
+            
             if (game.isSpectator(player)) {
                 // Respawn at spectator spawn
                 SerializableLocation spectatorLoc = game.getArena().getSpectatorSpawn();

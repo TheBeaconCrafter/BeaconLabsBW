@@ -19,6 +19,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 
 import org.bukkit.event.player.PlayerToggleFlightEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
 import java.util.List;
@@ -64,8 +65,11 @@ public class UltimatesListener implements Listener {
         }
         
         // Process abilities based on item and class
-        if ((playerClass == UltimateClass.SWORDSMAN && item.getType() == Material.BLAZE_ROD) ||
-            (playerClass == UltimateClass.HEALER && item.getType() == Material.GOLDEN_APPLE) ||
+        if (playerClass == UltimateClass.SWORDSMAN && item.getType().name().contains("SWORD")) {
+            // Activate the ability
+            plugin.getUltimatesManager().activateUltimate(player, playerClass);
+            event.setCancelled(true);
+        } else if ((playerClass == UltimateClass.HEALER && item.getType() == Material.GOLDEN_APPLE) ||
             (playerClass == UltimateClass.FROZO && item.getType() == Material.PACKED_ICE) ||
             (playerClass == UltimateClass.GATHERER && item.getType() == Material.ENDER_CHEST) ||
             (playerClass == UltimateClass.DEMOLITION && item.getType() == Material.FIRE_CHARGE)) {
@@ -89,8 +93,14 @@ public class UltimatesListener implements Listener {
         // Check if player is a Builder and placed wool
         UltimateClass playerClass = game.getPlayerUltimateClass(player.getUniqueId());
         if (playerClass == UltimateClass.BUILDER && event.getBlock().getType().name().contains("WOOL")) {
-            // Process fast bridge building
-            plugin.getUltimatesManager().handleFastBridge(player, event.getBlock(), event.getBlockAgainst().getFace(event.getBlock()));
+            // Check if player is holding the Builder's tool
+            ItemStack mainHand = player.getInventory().getItemInMainHand();
+            ItemStack offHand = player.getInventory().getItemInOffHand();
+            
+            if (mainHand.getType() == Material.BRICKS || offHand.getType() == Material.BRICKS) {
+                // Process fast bridge building
+                plugin.getUltimatesManager().handleFastBridge(player, event.getBlock(), event.getBlockAgainst().getFace(event.getBlock()));
+            }
         }
     }
     
@@ -103,18 +113,23 @@ public class UltimatesListener implements Listener {
         if (game != null && game.getGameMode() == GameMode.ULTIMATES) {
             UltimateClass playerClass = game.getPlayerUltimateClass(player.getUniqueId());
             if (playerClass == UltimateClass.KANGAROO && player.getGameMode().name().contains("SURVIVAL")) {
-                // Process kangaroo double jump
-                if (plugin.getUltimatesManager().processKangarooJump(player)) {
-                    event.setCancelled(true);
-                    player.setFlying(false);
-                    player.setAllowFlight(false);
-                    
-                    // Re-enable flight after a short delay to allow another double jump
-                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                        if (player.isOnline() && !player.isDead() && game.isPlayerInGame(player) && !game.isSpectator(player)) {
-                            player.setAllowFlight(true);
-                        }
-                    }, 20L); // 1 second delay
+                // Check if player is on ground or has recently jumped
+                if (!player.isOnGround() && !player.isFlying()) {
+                    // Process kangaroo double jump
+                    if (plugin.getUltimatesManager().processKangarooJump(player)) {
+                        event.setCancelled(true);
+                        player.setFlying(false);
+                        player.setAllowFlight(false);
+                          // Start cooldown display on XP bar (10 seconds)
+                        plugin.getUltimatesManager().startCooldownDisplay(player, 10);
+                        
+                        // Schedule flight re-enable
+                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                            if (player.isOnline() && !player.isDead() && game.isPlayerInGame(player) && !game.isSpectator(player)) {
+                                player.setAllowFlight(true);
+                            }
+                        }, 10 * 20L); // 10 seconds
+                    }
                 }
             }
         }

@@ -211,13 +211,20 @@ public class ShopManager {
             List<String> lore = new ArrayList<>();
             lore.add(ChatColor.GRAY + shopItem.getDescription());
             lore.add("");
+              String costText = ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + shopItem.getCost() + " ";
+            Material currency = shopItem.getCurrency();
             
-            String costText = ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + shopItem.getCost() + " ";
-            switch (shopItem.getCurrency()) {
-                case IRON_INGOT -> lore.add(costText + ChatColor.WHITE + "Iron");
-                case GOLD_INGOT -> lore.add(costText + ChatColor.GOLD + "Gold");
-                case EMERALD -> lore.add(costText + ChatColor.GREEN + "Emerald");
-                default -> lore.add(costText + "Unknown");
+            if (shopItem instanceof UltimateShopItem) {
+                lore.add(ChatColor.GREEN + "FREE");
+            } else if (currency == null) {
+                lore.add(costText + "Unknown");
+            } else {
+                switch (currency) {
+                    case IRON_INGOT -> lore.add(costText + ChatColor.WHITE + "Iron");
+                    case GOLD_INGOT -> lore.add(costText + ChatColor.GOLD + "Gold");
+                    case EMERALD -> lore.add(costText + ChatColor.GREEN + "Emerald");
+                    default -> lore.add(costText + "Unknown");
+                }
             }
             
             lore.add("");
