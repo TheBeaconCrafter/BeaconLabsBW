@@ -105,8 +105,7 @@ public class BlockListener implements Listener {
             }
         }
     }
-    
-    @EventHandler(priority = EventPriority.HIGHEST)
+      @EventHandler(priority = EventPriority.HIGHEST)
     public void onBlockBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
         Block block = event.getBlock();
@@ -130,6 +129,8 @@ public class BlockListener implements Listener {
             if (isBedBlock(block.getType())) {
                 // Cancel the event - PlayerListener will handle the bed breaking
                 event.setCancelled(true);
+                // Prevent item drops from beds
+                event.setDropItems(false);
                 return;
             }
               // Allow breaking blocks that were placed during the game

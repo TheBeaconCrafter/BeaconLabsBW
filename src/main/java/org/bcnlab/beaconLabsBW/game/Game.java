@@ -426,8 +426,7 @@ public class Game {
             teamIndex++;
         }
     }
-    
-    /**
+      /**
      * Give team-colored armor to a player
      *
      * @param player The player
@@ -451,6 +450,18 @@ public class Game {
         chestplateMeta.setColor(teamColor);
         leggingsMeta.setColor(teamColor);
         bootsMeta.setColor(teamColor);
+        
+        // Set armor to be unbreakable to fix durability issues
+        helmetMeta.setUnbreakable(true);
+        chestplateMeta.setUnbreakable(true);
+        leggingsMeta.setUnbreakable(true);
+        bootsMeta.setUnbreakable(true);
+        
+        // Hide the unbreakable flag from players
+        helmetMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_UNBREAKABLE);
+        chestplateMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_UNBREAKABLE);
+        leggingsMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_UNBREAKABLE);
+        bootsMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_UNBREAKABLE);
         
         helmet.setItemMeta(helmetMeta);
         chestplate.setItemMeta(chestplateMeta);
@@ -501,7 +512,7 @@ public class Game {
      * @param colorName The team color name
      * @return The wool material
      */
-    private Material getTeamWoolMaterial(String colorName) {
+    public Material getTeamWoolMaterial(String colorName) {
         return switch (colorName.toUpperCase()) {
             case "RED" -> Material.RED_WOOL;
             case "BLUE" -> Material.BLUE_WOOL;
@@ -752,12 +763,14 @@ public class Game {
                 SerializableLocation spawnLoc = teamData.getSpawnLocation();
                 if (spawnLoc != null) {
                     player.teleport(spawnLoc.toBukkitLocation());
-                }
-                  // Give team armor and initial equipment
+                }                // Give team armor and initial equipment
                 giveTeamArmor(player, teamData);
                 giveInitialEquipment(player);
                   // Apply team upgrades
                 applyTeamUpgrades(player);
+                
+                // Fix armor durability
+                org.bcnlab.beaconLabsBW.utils.ArmorHandler.fixPlayerArmor(player);
                 
                 // Restore permanent tools
                 restorePermanentItems(player, permanentItems);

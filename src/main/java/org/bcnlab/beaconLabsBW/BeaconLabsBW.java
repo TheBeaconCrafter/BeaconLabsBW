@@ -134,6 +134,11 @@ public final class BeaconLabsBW extends JavaPlugin {
         pm.registerEvents(new InventoryListener(this), this);
         pm.registerEvents(new UltimatesListener(this), this);
         
+        // Register and start our armor fix listener to handle armor durability issues
+        org.bcnlab.beaconLabsBW.listeners.ArmorFixListener armorFixListener = new org.bcnlab.beaconLabsBW.listeners.ArmorFixListener(this);
+        pm.registerEvents(armorFixListener, this);
+        armorFixListener.startArmorFixTask();
+        
         // Start void check task
         playerListener.startVoidCheck();
     }

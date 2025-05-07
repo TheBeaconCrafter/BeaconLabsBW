@@ -102,8 +102,7 @@ public class PlayerListener implements Listener {
             // Skip death screen
             plugin.getServer().getScheduler().runTaskLater(plugin, () -> player.spigot().respawn(), 2L);
         }
-    }
-      @EventHandler
+    }    @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
         Game game = plugin.getGameManager().getPlayerGame(player);
@@ -135,6 +134,11 @@ public class PlayerListener implements Listener {
                         }
                     }
                 }
+                
+                // Schedule a task to fix armor durability after respawn
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    org.bcnlab.beaconLabsBW.utils.ArmorHandler.fixPlayerArmor(player);
+                }, 5L); // Delay of 5 ticks (0.25 seconds) to ensure armor is equipped first
             }
         }
     }
@@ -268,7 +272,7 @@ public class PlayerListener implements Listener {
     }    // Track last interaction time to prevent spam clicks on beds
     private final java.util.Map<java.util.UUID, Long> lastBedInteraction = new java.util.HashMap<>();
     private static final long BED_INTERACTION_COOLDOWN = 500; // 0.5 seconds
-      private void handleBedBreak(Player player, Block bed, Game game) {
+    private void handleBedBreak(Player player, Block bed, Game game) {
         if (bed == null || game == null) return;
         
         // Anti-spam check
@@ -297,13 +301,40 @@ public class PlayerListener implements Listener {
                     return;
                 }
                 
-                // Prevent bed from dropping items
-                bed.setType(Material.AIR);
+                // Find and destroy the entire bed (head and foot parts) to prevent bed drops
+                // This fixes the issue of beds sometimes dropping as items
+                destroyBedParts(bed);
                 
                 // Handle bed break in the game
                 game.handleBedBreak(teamName, player);
                 return;
             }
+        }
+    }
+    
+    /**
+     * Destroy all parts of a bed to prevent item drops
+     * 
+     * @param bedBlock Any part of the bed
+     */
+    private void destroyBedParts(Block bedBlock) {
+        if (bedBlock.getType().toString().contains("BED")) {
+            // Get the block data to find connected bed parts
+            org.bukkit.block.data.type.Bed bed = (org.bukkit.block.data.type.Bed) bedBlock.getBlockData();
+            
+            // Get the facing direction of the bed
+            org.bukkit.block.BlockFace facing = bed.getFacing();
+            
+            // Get both parts of the bed
+            Block headBlock = bed.getPart() == org.bukkit.block.data.type.Bed.Part.HEAD ? 
+                              bedBlock : bedBlock.getRelative(facing);
+                              
+            Block footBlock = bed.getPart() == org.bukkit.block.data.type.Bed.Part.FOOT ? 
+                              bedBlock : bedBlock.getRelative(facing.getOppositeFace());
+            
+            // Set both parts to AIR to avoid item drops
+            headBlock.setType(Material.AIR, false);
+            footBlock.setType(Material.AIR, false);
         }
     }
     

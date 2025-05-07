@@ -35,6 +35,7 @@ public class UltimatesManager implements Listener {
     private final Map<UUID, BukkitTask> healerTasks = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitTask> frozenPlayers = new ConcurrentHashMap<>();
     private final Map<UUID, Integer> kangarooCooldownTasks = new ConcurrentHashMap<>();
+    private BukkitTask builderWoolTask; // Task for Builder wool generation
     
     // Constants for ultimates
     private static final int SWORDSMAN_DASH_COOLDOWN = 10; // seconds
@@ -44,10 +45,17 @@ public class UltimatesManager implements Listener {
     private static final int GATHERER_DUPLICATION_CHANCE = 25; // percentage
     private static final int KANGAROO_JUMP_COOLDOWN = 10; // seconds
     private static final int BUILDER_BRIDGE_LENGTH = 6; // blocks
-
     public UltimatesManager(BeaconLabsBW plugin) {
         this.plugin = plugin;
         Bukkit.getPluginManager().registerEvents(this, plugin);
+        
+        // Start builder wool generation task - runs every 5 seconds
+        builderWoolTask = Bukkit.getScheduler().runTaskTimer(
+            plugin, 
+            new BuilderWoolTask(plugin),
+            20L,  // 1 second initial delay 
+            100L  // 5 seconds between checks
+        );
     }
 
     /**
@@ -563,11 +571,9 @@ public class UltimatesManager implements Listener {
         }
         
         // Set cooldown
-        abilityCooldowns.put(playerId, System.currentTimeMillis() + (KANGAROO_JUMP_COOLDOWN * 1000));
-        
-        // Apply jump boost
+        abilityCooldowns.put(playerId, System.currentTimeMillis() + (KANGAROO_JUMP_COOLDOWN * 1000));        // Apply jump boost - increased from 0.8 to 1.5 for stronger boost
         Vector velocity = player.getVelocity();
-        velocity.setY(0.8);
+        velocity.setY(1.5);
         player.setVelocity(velocity);
         
         // Add temporary fall damage immunity
@@ -734,14 +740,13 @@ public class UltimatesManager implements Listener {
             private int secondsLeft = cooldownSeconds;
             
             @Override
-            public void run() {
-                if (secondsLeft <= 0) {
+            public void run() {                if (secondsLeft <= 0) {
                     player.setExp(0.0f);
                     player.setLevel(0);
                     cooldownTasks.remove(playerId);
                     
-                    // Play ready sound
-                    player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                    // Play a subtle ready sound once (reduced volume)
+                    player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.2f);
                     
                     // Cancel this task
                     BukkitTask task = cooldownTasks.get(playerId);
@@ -754,7 +759,14 @@ public class UltimatesManager implements Listener {
                 
                 secondsLeft--;
                 player.setLevel(secondsLeft);
-                player.setExp((float) secondsLeft / cooldownSeconds);
+                
+                // Smooth transition for XP bar - maintain value between updates to prevent flickering
+                float newExpValue = (float) secondsLeft / cooldownSeconds;
+                
+                // Only update the exp bar if this is actually a decrease
+                if (newExpValue < player.getExp()) {
+                    player.setExp(newExpValue);
+                }
             }
         }, 20L, 20L);
         
