@@ -3,9 +3,11 @@ package org.bcnlab.beaconLabsBW.game.ultimates;
 import org.bcnlab.beaconLabsBW.BeaconLabsBW;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
@@ -22,6 +24,7 @@ public class SwordsmanManager {
     // Track swordsman teleport back locations and expiration times
     private final Map<UUID, org.bukkit.Location> swordsmanTeleports = new ConcurrentHashMap<>();
     private final Map<UUID, Long> teleportExpirationTimes = new ConcurrentHashMap<>();
+    private final Map<UUID, org.bukkit.scheduler.BukkitTask> holdingTeleportTasks = new ConcurrentHashMap<>();
     // How long a teleport opportunity lasts (in milliseconds)
     private static final long TELEPORT_EXPIRATION_TIME = 8000; // 8 seconds
 
@@ -38,14 +41,64 @@ public class SwordsmanManager {
     public boolean processSwordsmanDash(Player player) {
         UUID playerId = player.getUniqueId();
         
+        // If player clicks again while a hold task is already running, cancel the old hold and start a new one.
+        if (holdingTeleportTasks.containsKey(playerId)) {
+            holdingTeleportTasks.get(playerId).cancel();
+            holdingTeleportTasks.remove(playerId);
+        }
+
         // Check if player has the option to teleport back
         if (hasTeleportOption(playerId)) {
-            // This is a second click - teleport back
-            teleportPlayerBack(player);
-            return false;
+            // Player has an active teleport-back option. Initiate 2-second hold check.
+            player.sendMessage(plugin.getPrefix() + ChatColor.GOLD + "Hold right-click (2s) to teleport back!");
+            player.playSound(player.getLocation(), Sound.BLOCK_STONE_BUTTON_CLICK_ON, 1.0f, 1.5f);
+
+            org.bukkit.scheduler.BukkitTask holdCheckTask = new org.bukkit.scheduler.BukkitRunnable() {
+                private int ticksElapsed = 0;
+                private final org.bukkit.Location initialHoldLocation = player.getLocation().clone();
+                private final int initialHotbarSlot = player.getInventory().getHeldItemSlot();
+                private final String ultimateSwordName = ChatColor.RED + "Swordsman's Dash"; // Assuming this is the name
+
+                @Override
+                public void run() {
+                    if (!player.isOnline() || player.isDead()) {
+                        cancelHoldAndTask();
+                        return;
+                    }
+
+                    ItemStack currentItem = player.getInventory().getItemInMainHand();
+                    boolean stillHoldingUltimateSword = currentItem != null && 
+                                                      currentItem.getType() == Material.WOODEN_SWORD && 
+                                                      currentItem.hasItemMeta() && 
+                                                      ultimateSwordName.equals(currentItem.getItemMeta().getDisplayName());
+
+                    if (!stillHoldingUltimateSword || 
+                        player.getInventory().getHeldItemSlot() != initialHotbarSlot || 
+                        player.getLocation().distanceSquared(initialHoldLocation) > 9) {
+                        player.sendMessage(plugin.getPrefix() + ChatColor.RED + "Teleport cancelled (moved, changed item, or stopped holding).");
+                        player.playSound(player.getLocation(), Sound.BLOCK_STONE_BUTTON_CLICK_OFF, 1.0f, 1.0f);
+                        cancelHoldAndTask();
+                        return;
+                    }
+
+                    ticksElapsed += 5; // Check every 5 ticks
+                    if (ticksElapsed >= 40) { // 2 seconds passed
+                        teleportPlayerBack(player); // Perform teleport
+                        cancelHoldAndTask();
+                    }
+                }
+
+                private void cancelHoldAndTask() {
+                    holdingTeleportTasks.remove(playerId);
+                    this.cancel();
+                }
+            }.runTaskTimer(plugin, 0L, 5L);
+
+            holdingTeleportTasks.put(playerId, holdCheckTask);
+            return false; // Signifies a teleport attempt (via hold) is initiated, not an immediate dash.
         }
         
-        // This is a first click - perform the dash
+        // This is a first click or teleport option expired - perform the dash
         performDash(player);
         return true;
     }
@@ -137,14 +190,25 @@ public class SwordsmanManager {
         swordsmanTeleports.put(playerId, location);
         teleportExpirationTimes.put(playerId, System.currentTimeMillis() + TELEPORT_EXPIRATION_TIME);
         
-        // Schedule task to notify about expiration
+        // Schedule task to notify about expiration if the option wasn't used
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            Player player = Bukkit.getPlayer(playerId);
-            if (player != null && player.isOnline() && hasTeleportOption(playerId)) {
+            // Check if the teleport option still exists (meaning it wasn't used and teleportPlayerBack wasn't called)
+            // And also check if it should have expired by now.
+            if (swordsmanTeleports.containsKey(playerId)) {
+                // If it's still in the map, it means hasTeleportOption() wasn't called to auto-clear it upon expiry, 
+                // or the player simply didn't attempt to use it.
+                Player player = Bukkit.getPlayer(playerId);
+                if (player != null && player.isOnline()) {
+                    player.sendMessage(plugin.getPrefix() + ChatColor.RED + "Your teleport opportunity has expired!");
+                }
+                // Ensure it's cleared now, regardless of hasTeleportOption's prior intervention.
                 clearTeleportOption(playerId);
-                player.sendMessage(plugin.getPrefix() + ChatColor.RED + "Your teleport opportunity has expired!");
             }
-        }, 20L * 8); // 8 seconds
+            // If swordsmanTeleports does not contain playerId, it means:
+            // 1. Player teleported back successfully (teleportPlayerBack cleared it).
+            // 2. It expired and a subsequent call to hasTeleportOption() already cleared it.
+            // In these cases, this task does nothing further.
+        }, (TELEPORT_EXPIRATION_TIME / 50L) + 20L); // Run 1 second (20 ticks) after it should have expired
     }
     
     /**
@@ -185,5 +249,10 @@ public class SwordsmanManager {
     public void clearTeleportOption(UUID playerId) {
         swordsmanTeleports.remove(playerId);
         teleportExpirationTimes.remove(playerId);
+        // Also cancel any pending hold task for this player
+        if (holdingTeleportTasks.containsKey(playerId)) {
+            holdingTeleportTasks.get(playerId).cancel();
+            holdingTeleportTasks.remove(playerId);
+        }
     }
 }

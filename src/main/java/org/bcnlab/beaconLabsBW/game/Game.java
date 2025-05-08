@@ -47,6 +47,7 @@ public class Game {
     // Game mode
     private GameMode gameMode = GameMode.NORMAL;
     private final Map<UUID, UltimateClass> playerUltimateClasses = new ConcurrentHashMap<>();
+    private boolean ultimatesActive = false; // Added flag for ultimate activation state
     
     // Game state tracking
     private final Map<String, Boolean> bedStatus = new ConcurrentHashMap<>();
@@ -349,6 +350,22 @@ public class Game {
         startGameTimer();
         // Start slow heal task
         startSlowHealTask();
+
+        if (this.gameMode == GameMode.ULTIMATES) {
+            this.ultimatesActive = false; // Ensure ultimates start as inactive
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                this.ultimatesActive = true;
+                broadcastMessage("&b&lULTIMATES ENABLED! &eYour ultimate abilities are now active!");
+                for (UUID playerId : players) {
+                    Player p = Bukkit.getPlayer(playerId);
+                    if (p != null) {
+                        p.playSound(p.getLocation(), Sound.EVENT_RAID_HORN, 1.0f, 1.2f);
+                    }
+                }
+            }, 400L); // 20 seconds (20 ticks/second * 20 seconds)
+        } else {
+            this.ultimatesActive = false; // Ultimates are not active in non-ultimate modes
+        }
     }
     
     /**
@@ -1235,6 +1252,7 @@ public class Game {
             teamPlayers.clear();
         }        // Place team beds for the next game
         placeTeamBeds();
+        ultimatesActive = false; // Reset on cleanup
     }
     
     /**
@@ -1752,6 +1770,9 @@ public class Game {
         if (state == GameState.WAITING || state == GameState.STARTING) {
             this.gameMode = gameMode;
             broadcastMessage("&aGame mode has been set to &e" + gameMode.getDisplayName());
+            if (gameMode != GameMode.ULTIMATES) {
+                this.ultimatesActive = false; // Ensure flag is false if switching away from Ultimates
+            }
         }
     }
     
@@ -1839,7 +1860,10 @@ public class Game {
         if (item == null) return false;
         
         return switch (ultimateClass) {
-            case SWORDSMAN -> item.getType() == Material.BLAZE_ROD;
+            case SWORDSMAN -> item.getType() == Material.WOODEN_SWORD &&
+                               item.hasItemMeta() &&
+                               item.getItemMeta().hasDisplayName() &&
+                               item.getItemMeta().getDisplayName().equals(ChatColor.RED + "Swordsman's Dash");
             case HEALER -> item.getType() == Material.GOLDEN_APPLE;
             case FROZO -> item.getType() == Material.PACKED_ICE;
             case BUILDER -> item.getType() == Material.BRICKS;
@@ -1887,14 +1911,22 @@ public class Game {
 
           // Create the ultimate ability item and give it to the player
         // First clear any existing ultimate items
-        for (ItemStack item : player.getInventory().getContents()) {
-            if (item != null && (item.getType() == Material.BLAZE_ROD || item.getType() == Material.GOLDEN_APPLE || 
-                item.getType() == Material.PACKED_ICE || item.getType() == Material.BRICKS || 
-                item.getType() == Material.ENDER_CHEST || item.getType() == Material.FIRE_CHARGE)) {
-                player.getInventory().remove(item);
+        List<ItemStack> itemsToRemove = new ArrayList<>();
+        for (ItemStack invItem : player.getInventory().getContents()) {
+            if (invItem != null) {
+                for (UltimateClass uc : UltimateClass.values()) { // Check against all possible ultimate classes
+                    if (isUltimateItem(invItem, uc)) { // isUltimateItem now checks name for Swordsman
+                        itemsToRemove.add(invItem);
+                        break; // Found it's an ultimate item, add to list and go to next inventory slot
+                    }
+                }
             }
         }
-          ItemStack ultimateItem = plugin.getUltimatesManager().createUltimateItem(player, playerClass);
+        for (ItemStack itemToRemove : itemsToRemove) {
+            player.getInventory().remove(itemToRemove); // Remove collected items
+        }
+
+        ItemStack ultimateItem = plugin.getUltimatesManager().createUltimateItem(player, playerClass);
         if (ultimateItem != null) {
             player.getInventory().addItem(ultimateItem);
         }
@@ -2128,6 +2160,14 @@ public class Game {
             }
         }.runTaskTimer(plugin, 100L, 100L); // Run every 10 seconds (200 ticks)
         plugin.getLogger().info("[Game " + gameId + "] Started slow heal task.");
+    }
+
+    /**
+     * Check if ultimate abilities are currently active in this game.
+     * @return true if ultimates are active, false otherwise.
+     */
+    public boolean areUltimatesActive() {
+        return this.gameMode == GameMode.ULTIMATES && this.ultimatesActive;
     }
 }
 

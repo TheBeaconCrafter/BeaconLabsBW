@@ -117,8 +117,15 @@ public class UltimatesManager implements Listener {
      * @param player The player
      * @param ultimateClass The ultimate class
      * @return True if activated successfully
-     */    public boolean activateUltimate(Player player, UltimateClass ultimateClass) {
+     */
+    public boolean activateUltimate(Player player, UltimateClass ultimateClass) {
         UUID playerId = player.getUniqueId();
+
+        org.bcnlab.beaconLabsBW.game.Game game = plugin.getGameManager().getPlayerGame(player);
+        if (game == null || !game.areUltimatesActive()) {
+            player.sendMessage(ChatColor.RED + "Ultimates are not active yet!");
+            return false;
+        }
         
         // Check for cooldown
         if (abilityCooldowns.containsKey(playerId)) {
@@ -145,27 +152,26 @@ public class UltimatesManager implements Listener {
         }
 
         return true;
-    }    /**
+    }
+
+    /**
      * Activate Swordsman's dash ability
-     */    private void activateSwordsmanDash(Player player) {
-        // Set cooldown
+     */
+    private void activateSwordsmanDash(Player player) {
+        // Set cooldown for the ultimate ability immediately
         UUID playerId = player.getUniqueId();
         abilityCooldowns.put(playerId, System.currentTimeMillis() + (SWORDSMAN_DASH_COOLDOWN * 1000));
+        startCooldownDisplay(player, SWORDSMAN_DASH_COOLDOWN); // Always start cooldown display
         
-        // Use the SwordsmanManager to handle the dash
-        if (swordsmanManager.processSwordsmanDash(player)) {
-            // If the dash was performed (not a teleport-back)
-            startCooldownDisplay(player, SWORDSMAN_DASH_COOLDOWN);
-        } else {
-            // If a teleport-back was performed, we don't need to show the cooldown
-            // as the teleport-back option has been consumed
-            clearCooldownDisplay(player);
-        }
+        // SwordsmanManager will handle the logic of dash vs. teleport hold attempt
+        // It no longer dictates UltimatesManager's cooldown display directly with its boolean return.
+        swordsmanManager.processSwordsmanDash(player);
     }
 
     /**
      * Activate Healer's aura ability
-     */    private void activateHealerAura(Player player) {
+     */
+    private void activateHealerAura(Player player) {
         // Set cooldown
         UUID playerId = player.getUniqueId();
         abilityCooldowns.put(playerId, System.currentTimeMillis() + (HEALER_AURA_COOLDOWN * 1000));
@@ -224,7 +230,8 @@ public class UltimatesManager implements Listener {
 
     /**
      * Activate Frozo's slow ability
-     */    private void activateFrozo(Player player) {
+     */
+    private void activateFrozo(Player player) {
         // Set cooldown
         UUID playerId = player.getUniqueId();
         abilityCooldowns.put(playerId, System.currentTimeMillis() + (FROZO_SLOWNESS_COOLDOWN * 1000));
@@ -311,7 +318,8 @@ public class UltimatesManager implements Listener {
 
     /**
      * Activate Gatherer's Ender Chest ability
-     */    private void activateGathererChest(Player player) {
+     */
+    private void activateGathererChest(Player player) {
         // Set cooldown
         UUID playerId = player.getUniqueId();
         int GATHERER_CHEST_COOLDOWN = 5; // 5 second cooldown
@@ -331,7 +339,8 @@ public class UltimatesManager implements Listener {
 
     /**
      * Activate Demolition Charge ability
-     */    private void activateDemolitionCharge(Player player) {
+     */
+    private void activateDemolitionCharge(Player player) {
         // Set cooldown
         UUID playerId = player.getUniqueId();
         int DEMOLITION_CHARGE_COOLDOWN = 15; // 15 seconds
@@ -442,6 +451,12 @@ public class UltimatesManager implements Listener {
             face = getFacingDirection(player);
         }
         
+        org.bcnlab.beaconLabsBW.game.Game game = plugin.getGameManager().getPlayerGame(player);
+        if (game == null || !game.areUltimatesActive()) {
+            // Optionally send a message or just silently prevent
+            return;
+        }
+
         UUID playerId = player.getUniqueId();
         if (abilityCooldowns.containsKey(playerId) && 
             abilityCooldowns.get(playerId) > System.currentTimeMillis()) {
@@ -558,6 +573,14 @@ public class UltimatesManager implements Listener {
      * Process Kangaroo double jump 
      */    public boolean processKangarooJump(Player player) {
         UUID playerId = player.getUniqueId();
+
+        org.bcnlab.beaconLabsBW.game.Game game = plugin.getGameManager().getPlayerGame(player);
+        if (game == null || !game.areUltimatesActive()) {
+            player.setAllowFlight(true); // Keep flight enabled if they were supposed to have it
+            player.setFlying(false);     // But cancel the current jump
+            player.sendMessage(ChatColor.RED + "Ultimates are not active yet!");
+            return false;
+        }
         
         // Check if player is on cooldown
         if (abilityCooldowns.containsKey(playerId) && 
@@ -800,6 +823,7 @@ public class UltimatesManager implements Listener {
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         clearCooldownDisplay(event.getEntity());
+        swordsmanManager.clearTeleportOption(event.getEntity().getUniqueId());
     }
     
     /**
@@ -808,6 +832,7 @@ public class UltimatesManager implements Listener {
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         clearCooldownDisplay(event.getPlayer());
+        swordsmanManager.clearTeleportOption(event.getPlayer().getUniqueId());
     }
     
     /**
