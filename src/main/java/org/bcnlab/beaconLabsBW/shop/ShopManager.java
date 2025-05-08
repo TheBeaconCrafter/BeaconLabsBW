@@ -418,17 +418,24 @@ public class ShopManager {
                 return;
             }
 
-            Material currentToolMat = null;
+            Material currentToolMat = null; // Determine prerequisite material
             if (upgradeInfo.nextTierMaterial == Material.STONE_PICKAXE) currentToolMat = Material.WOODEN_PICKAXE;
             else if (upgradeInfo.nextTierMaterial == Material.IRON_PICKAXE) currentToolMat = Material.STONE_PICKAXE;
             else if (upgradeInfo.nextTierMaterial == Material.DIAMOND_PICKAXE) currentToolMat = Material.IRON_PICKAXE;
-            else if (upgradeInfo.nextTierMaterial == Material.WOODEN_PICKAXE) currentToolMat = null; // Buying the first one
-
-            if (upgradeInfo.nextTierMaterial == Material.STONE_AXE) currentToolMat = Material.WOODEN_AXE;
+            else if (upgradeInfo.nextTierMaterial == Material.WOODEN_PICKAXE) currentToolMat = null; 
+            else if (upgradeInfo.nextTierMaterial == Material.STONE_AXE) currentToolMat = Material.WOODEN_AXE;
             else if (upgradeInfo.nextTierMaterial == Material.IRON_AXE) currentToolMat = Material.STONE_AXE;
             else if (upgradeInfo.nextTierMaterial == Material.DIAMOND_AXE) currentToolMat = Material.IRON_AXE;
-            else if (upgradeInfo.nextTierMaterial == Material.WOODEN_AXE) currentToolMat = null; // Buying the first one
-            
+            else if (upgradeInfo.nextTierMaterial == Material.WOODEN_AXE) currentToolMat = null;
+
+            // Check for currency
+            boolean hasEnoughCurrency = hasCurrency(player, upgradeInfo.currency, upgradeInfo.cost);
+            if (!hasEnoughCurrency) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou don't have enough " + MessageUtils.colorize(getCurrencyName(upgradeInfo.currency)) + "!");
+                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 0.5f);
+                return;
+            }
+
             // Check if player has the prerequisite tool (if not buying the first wooden one)
             boolean hasPrerequisite = false;
             if (currentToolMat != null) {
@@ -443,13 +450,12 @@ public class ShopManager {
             }
 
             if (!hasPrerequisite) {
-                // This case should ideally be handled by getNextToolUpgradeInfo returning the wooden tool info if player has nothing.
-                // If currentToolMat is not null, it means they are upgrading from an existing tool.
                 MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou need a " + (currentToolMat != null ? currentToolMat.name().toLowerCase().replace("_", " ") : "base tool") + " to upgrade!");
                 player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 0.5f);
                 return;
             }
             
+            // If all checks pass:
             removeCurrency(player, upgradeInfo.currency, upgradeInfo.cost);
             if (currentToolMat != null) {
                 player.getInventory().remove(currentToolMat);
@@ -948,32 +954,35 @@ public class ShopManager {
         ItemStack[] inventory = player.getInventory().getContents();
         for (ItemStack item : inventory) {
             if (item != null && item.getType().name().contains(toolType)) {
-                // Prioritize higher tier tools if multiple exist (e.g. a wooden and stone)
                 if (currentMaterial == null || getTierLevel(item.getType()) > getTierLevel(currentMaterial)) {
                     currentMaterial = item.getType();
                 }
             }
         }
 
+        ToolUpgradeInfo result = null;
         // Default to needing the first tier if no tool is found
         if (currentMaterial == null) {
-            if (toolType.equals("PICKAXE")) return new ToolUpgradeInfo(Material.WOODEN_PICKAXE, Material.IRON_INGOT, 5, "Wooden Pickaxe", false); // Cost for base wooden pickaxe
-            if (toolType.equals("AXE")) return new ToolUpgradeInfo(Material.WOODEN_AXE, Material.IRON_INGOT, 5, "Wooden Axe", false); // Cost for base wooden axe
-             return new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true); // Should not happen
+            if (toolType.equals("PICKAXE")) result = new ToolUpgradeInfo(Material.WOODEN_PICKAXE, Material.IRON_INGOT, 5, "Wooden Pickaxe", false);
+            else if (toolType.equals("AXE")) result = new ToolUpgradeInfo(Material.WOODEN_AXE, Material.IRON_INGOT, 5, "Wooden Axe", false);
+            else result = new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true);
+        } else if (toolType.equals("PICKAXE")) {
+            if (currentMaterial == Material.WOODEN_PICKAXE) result = new ToolUpgradeInfo(Material.STONE_PICKAXE, Material.IRON_INGOT, 10, "Stone Pickaxe", false);
+            else if (currentMaterial == Material.STONE_PICKAXE) result = new ToolUpgradeInfo(Material.IRON_PICKAXE, Material.IRON_INGOT, 25, "Iron Pickaxe", false);
+            else if (currentMaterial == Material.IRON_PICKAXE) result = new ToolUpgradeInfo(Material.DIAMOND_PICKAXE, Material.GOLD_INGOT, 5, "Diamond Pickaxe", false);
+            else if (currentMaterial == Material.DIAMOND_PICKAXE) result = new ToolUpgradeInfo(Material.DIAMOND_PICKAXE, Material.AIR, 0, "Max Tier Pickaxe", true);
+            else result = new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true);
+        } else if (toolType.equals("AXE")) {
+            if (currentMaterial == Material.WOODEN_AXE) result = new ToolUpgradeInfo(Material.STONE_AXE, Material.IRON_INGOT, 10, "Stone Axe", false);
+            else if (currentMaterial == Material.STONE_AXE) result = new ToolUpgradeInfo(Material.IRON_AXE, Material.IRON_INGOT, 25, "Iron Axe", false);
+            else if (currentMaterial == Material.IRON_AXE) result = new ToolUpgradeInfo(Material.DIAMOND_AXE, Material.GOLD_INGOT, 5, "Diamond Axe", false);
+            else if (currentMaterial == Material.DIAMOND_AXE) result = new ToolUpgradeInfo(Material.DIAMOND_AXE, Material.AIR, 0, "Max Tier Axe", true);
+            else result = new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true);
+        } else {
+             result = new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true);
         }
 
-        if (toolType.equals("PICKAXE")) {
-            if (currentMaterial == Material.WOODEN_PICKAXE) return new ToolUpgradeInfo(Material.STONE_PICKAXE, Material.IRON_INGOT, 10, "Stone Pickaxe", false);
-            if (currentMaterial == Material.STONE_PICKAXE) return new ToolUpgradeInfo(Material.IRON_PICKAXE, Material.IRON_INGOT, 25, "Iron Pickaxe", false);
-            if (currentMaterial == Material.IRON_PICKAXE) return new ToolUpgradeInfo(Material.DIAMOND_PICKAXE, Material.GOLD_INGOT, 5, "Diamond Pickaxe", false);
-            if (currentMaterial == Material.DIAMOND_PICKAXE) return new ToolUpgradeInfo(Material.DIAMOND_PICKAXE, Material.AIR, 0, "Max Tier Pickaxe", true);
-        } else if (toolType.equals("AXE")) {
-            if (currentMaterial == Material.WOODEN_AXE) return new ToolUpgradeInfo(Material.STONE_AXE, Material.IRON_INGOT, 10, "Stone Axe", false);
-            if (currentMaterial == Material.STONE_AXE) return new ToolUpgradeInfo(Material.IRON_AXE, Material.IRON_INGOT, 25, "Iron Axe", false);
-            if (currentMaterial == Material.IRON_AXE) return new ToolUpgradeInfo(Material.DIAMOND_AXE, Material.GOLD_INGOT, 5, "Diamond Axe", false);
-            if (currentMaterial == Material.DIAMOND_AXE) return new ToolUpgradeInfo(Material.DIAMOND_AXE, Material.AIR, 0, "Max Tier Axe", true);
-        }
-        return new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true); // Should indicate error or unknown state
+        return result;
     }
 
     private int getTierLevel(Material material) {

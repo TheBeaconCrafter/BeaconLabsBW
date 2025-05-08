@@ -37,6 +37,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.entity.Fireball;
 import org.bukkit.Sound;
+import org.bukkit.event.block.BlockBreakEvent;
 
 /**
  * Handles player-related events for BedWars
@@ -150,32 +151,33 @@ public class PlayerListener implements Listener {
         Block block = event.getClickedBlock();
         Action action = event.getAction();
         ItemStack item = event.getItem();
-          // Check for right-clicking or left-clicking beds 
-        if (block != null && 
-            (action == Action.RIGHT_CLICK_BLOCK || action == Action.LEFT_CLICK_BLOCK) && 
-            block.getType().name().contains("BED")) {
-            
-            // Check if the player is in a game
+        
+        // Check for interacting with beds 
+        if (block != null && block.getType().name().contains("BED")) {
             Game game = plugin.getGameManager().getPlayerGame(player);
             if (game != null && game.getState() == GameState.RUNNING) {
-                try {
-                    // Handle bed breaking logic in game
-                    handleBedBreak(player, block, game);
-                } catch (Exception e) {
-                    // If an error occurs during bed interaction (like the IllegalArgumentException)
-                    plugin.getLogger().warning("Error during bed interaction: " + e.getMessage());
-                    
-                    // Cancel the event to prevent further issues
+                // Prevent setting spawn point with right-click
+                if (action == Action.RIGHT_CLICK_BLOCK) {
                     event.setCancelled(true);
-                    
-                    // Try to repair the bed if it's causing issues
-                    if (action == Action.RIGHT_CLICK_BLOCK) {
-                        game.resetBedAtLocation(block.getLocation());
-                    }
+                    // Optionally send a message:
+                    // MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou cannot set your spawn point on game beds.");
+                    return; // Stop processing for right-click
                 }
                 
-                // Since bed is part of the game, don't run code below
-                return;
+                // Remove the LEFT_CLICK_BLOCK handling from here. It will be moved to BlockBreakEvent.
+                /* 
+                try {
+                    // Handle bed breaking logic in game
+                    // handleBedBreak(player, block, game); // MOVED
+                } catch (Exception e) {
+                    // ... (error handling) ...
+                    event.setCancelled(true);
+                    if (action == Action.RIGHT_CLICK_BLOCK) {
+                         game.resetBedAtLocation(block.getLocation());
+                     }
+                }
+                return; // Bed interaction handled (or cancelled)
+                */
             }
         }
         
@@ -184,77 +186,94 @@ public class PlayerListener implements Listener {
             event.getHand() == EquipmentSlot.HAND) {
             
             if (item != null && item.getType() == Material.VILLAGER_SPAWN_EGG) {
+                plugin.getLogger().info("[DreamDefender] Player " + player.getName() + " used Villager Spawn Egg.");
                 // Check if the item is a Dream Defender
                 ItemMeta meta = item.getItemMeta();
                 if (meta != null && meta.hasDisplayName() && 
                     meta.getDisplayName().contains("Dream Defender")) {
+                    plugin.getLogger().info("[DreamDefender] Item is named 'Dream Defender'. Proceeding...");
                     
-                    event.setCancelled(true);
+                    event.setCancelled(true); // Cancel default spawn egg behavior
                     
                     // Check if player is in a game
                     Game game = plugin.getGameManager().getPlayerGame(player);
                     if (game != null && game.getState() == GameState.RUNNING) {
+                        plugin.getLogger().info("[DreamDefender] Player is in running game " + game.getGameId() + ". Consuming item.");
                         // Consume the spawn egg
                         if (item.getAmount() > 1) {
                             item.setAmount(item.getAmount() - 1);
                         } else {
                             player.getInventory().setItemInMainHand(null);
-                        }                        // Spawn an Iron Golem that follows the player
-                        Location spawnLoc = player.getLocation();
-                        IronGolem golem = (IronGolem) player.getWorld().spawn(spawnLoc, IronGolem.class);
-                        golem.setCustomNameVisible(true);
-                        golem.setPersistent(false); // Don't persist after world unload
-                        
-                        // Set metadata for team identification
-                        String team = game.getPlayerTeam(player);
-                        if (team != null) {
-                            // Use appropriate color for the team
-                            String teamColor = game.getArena().getTeam(team).getColor();
-                            ChatColor chatColor = MessageUtils.getChatColorFromString(teamColor);
-                            
-                            golem.setCustomName(chatColor + "Dream Defender" + ChatColor.GRAY + " [2:00]");
-                            golem.setMetadata("team", new FixedMetadataValue(plugin, team));
-                            golem.setMetadata("owner", new FixedMetadataValue(plugin, player.getUniqueId().toString()));
-                            golem.setMetadata("game_id", new FixedMetadataValue(plugin, game.getGameId()));
-                            golem.setMetadata("spawn_time", new FixedMetadataValue(plugin, System.currentTimeMillis()));
                         }
                         
-                        // Start timer task for despawning after 2 minutes
-                        final int[] timeLeft = {120}; // 120 seconds = 2 minutes
-                        final int taskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-                            // Check if golem still exists
-                            if (!golem.isValid() || golem.isDead()) {
-                                Bukkit.getScheduler().cancelTask(golem.getMetadata("timer_task").get(0).asInt());
-                                return;
+                        Location spawnLoc = player.getLocation();
+                        plugin.getLogger().info("[DreamDefender] Attempting to spawn Iron Golem at: " + spawnLoc);
+                        // Spawn an Iron Golem
+                        try {
+                            IronGolem golem = (IronGolem) player.getWorld().spawn(spawnLoc, IronGolem.class);
+                            plugin.getLogger().info("[DreamDefender] Golem spawned successfully! Entity ID: " + golem.getEntityId());
+                            golem.setCustomNameVisible(true);
+                            golem.setPersistent(false); // Don't persist after world unload
+                            
+                            // Set metadata for team identification
+                            String team = game.getPlayerTeam(player);
+                            if (team != null) {
+                                plugin.getLogger().info("[DreamDefender] Setting metadata: team=" + team + ", owner=" + player.getUniqueId() + ", game=" + game.getGameId());
+                                String teamColor = game.getArena().getTeam(team).getColor();
+                                ChatColor chatColor = MessageUtils.getChatColorFromString(teamColor);
+                                golem.setCustomName(chatColor + "Dream Defender" + ChatColor.GRAY + " [2:00]");
+                                golem.setMetadata("team", new FixedMetadataValue(plugin, team));
+                                golem.setMetadata("owner", new FixedMetadataValue(plugin, player.getUniqueId().toString()));
+                                golem.setMetadata("game_id", new FixedMetadataValue(plugin, game.getGameId()));
+                                golem.setMetadata("spawn_time", new FixedMetadataValue(plugin, System.currentTimeMillis()));
+                            } else {
+                                plugin.getLogger().warning("[DreamDefender] Player " + player.getName() + " has no team, cannot set golem team metadata.");
                             }
                             
-                            timeLeft[0]--;
+                            // Start timer task for despawning after 2 minutes
+                            final int[] timeLeft = {120}; // 120 seconds = 2 minutes
+                            final int taskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+                                // Check if golem still exists
+                                if (!golem.isValid() || golem.isDead()) {
+                                    Bukkit.getScheduler().cancelTask(golem.getMetadata("timer_task").get(0).asInt());
+                                    return;
+                                }
+                                
+                                timeLeft[0]--;
+                                
+                                if (timeLeft[0] <= 0) {
+                                    // Time's up, remove the golem
+                                    golem.remove();
+                                    Bukkit.getScheduler().cancelTask(golem.getMetadata("timer_task").get(0).asInt());
+                                    return;
+                                }
+                                
+                                // Update name to show time left
+                                int minutes = timeLeft[0] / 60;
+                                int seconds = timeLeft[0] % 60;
+                                String timeString = String.format("%d:%02d", minutes, seconds);
+                                
+                                String teamColor = game.getArena().getTeam(team).getColor();
+                                ChatColor chatColor = MessageUtils.getChatColorFromString(teamColor);
+                                golem.setCustomName(chatColor + "Dream Defender" + ChatColor.GRAY + " [" + timeString + "]");
+                                
+                            }, 20L, 20L).getTaskId(); // Run every second
                             
-                            if (timeLeft[0] <= 0) {
-                                // Time's up, remove the golem
-                                golem.remove();
-                                Bukkit.getScheduler().cancelTask(golem.getMetadata("timer_task").get(0).asInt());
-                                return;
-                            }
+                            // Store task ID for cleanup
+                            golem.setMetadata("timer_task", new FixedMetadataValue(plugin, taskId));
                             
-                            // Update name to show time left
-                            int minutes = timeLeft[0] / 60;
-                            int seconds = timeLeft[0] % 60;
-                            String timeString = String.format("%d:%02d", minutes, seconds);
-                            
-                            String teamColor = game.getArena().getTeam(team).getColor();
-                            ChatColor chatColor = MessageUtils.getChatColorFromString(teamColor);
-                            golem.setCustomName(chatColor + "Dream Defender" + ChatColor.GRAY + " [" + timeString + "]");
-                            
-                        }, 20L, 20L).getTaskId(); // Run every second
-                        
-                        // Store task ID for cleanup
-                        golem.setMetadata("timer_task", new FixedMetadataValue(plugin, taskId));
-                        
-                        // Play spawn sound
-                        player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_IRON_GOLEM_REPAIR, 1.0f, 1.0f);
-                        MessageUtils.sendMessage(player, plugin.getPrefix() + "&aYou spawned a Dream Defender!");
+                            // Play spawn sound
+                            player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_IRON_GOLEM_REPAIR, 1.0f, 1.0f);
+                            MessageUtils.sendMessage(player, plugin.getPrefix() + "&aYou spawned a Dream Defender!");
+                        } catch (Exception e) {
+                            plugin.getLogger().severe("[DreamDefender] FAILED to spawn Iron Golem: " + e.getMessage());
+                            e.printStackTrace();
+                        }
+                    } else {
+                         plugin.getLogger().info("[DreamDefender] Player not in running game or game is null.");
                     }
+                } else {
+                     plugin.getLogger().info("[DreamDefender] Item meta/display name does not match 'Dream Defender'. Name: " + (meta != null ? meta.getDisplayName() : "null"));
                 }
             }
         }
@@ -526,14 +545,42 @@ public class PlayerListener implements Listener {
         
         if (game != null) {
             // Only allow certain commands during a game
-            String cmd = event.getMessage().toLowerCase().split(" ")[0];
+            String message = event.getMessage().toLowerCase();
+            String[] args = message.split(" ");
+            String cmd = args[0]; // The base command, e.g., "/bw"
+
+            // Allow admins to use any command
+            if (player.hasPermission("bedwars.admin")) {
+                return;
+            }
             
+            // Allow basic /bw commands like /bw leave
             if (cmd.equalsIgnoreCase("/bw") || 
                 cmd.equalsIgnoreCase("/labsbw") || 
-                cmd.equalsIgnoreCase("/bedwars") ||
-                player.hasPermission("bedwars.admin")) {
-                // Allow BedWars commands and admin commands
-                return;
+                cmd.equalsIgnoreCase("/bedwars")) {
+
+                if (args.length > 1) {
+                    String subCommand = args[1];
+                    // Check specific sub-commands for permissions
+                    if (subCommand.equalsIgnoreCase("shop")) {
+                        if (!player.hasPermission("bedwars.shop.use")) {
+                            event.setCancelled(true);
+                            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou do not have permission to use the shop command.");
+                            return;
+                        }
+                    } else if (subCommand.equalsIgnoreCase("upgrades")) {
+                        if (!player.hasPermission("bedwars.upgrades.use")) {
+                            event.setCancelled(true);
+                            MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou do not have permission to use the upgrades command.");
+                            return;
+                        }
+                    }
+                    // Allow other /bw subcommands like /bw leave
+                    return; 
+                } else {
+                    // Allow base /bw command itself (if it does anything)
+                    return;
+                }
             }
             
             // Block other commands
@@ -590,5 +637,39 @@ public class PlayerListener implements Listener {
             voidCheckTask.cancel();
             voidCheckTask = null;
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST) // High priority to ensure we handle it
+    public void onBlockBreak(BlockBreakEvent event) {
+        Player player = event.getPlayer();
+        Block block = event.getBlock();
+
+        // Check if it's a bed
+        if (block.getType().name().contains("BED")) {
+            Game game = plugin.getGameManager().getPlayerGame(player);
+            if (game != null && game.getState() == GameState.RUNNING) {
+                // Prevent bed item drop
+                event.setDropItems(false);
+
+                // Call the existing handleBedBreak logic 
+                // (which needs to be accessible or moved here)
+                handleBedBreak(player, block, game);
+                
+                // Note: handleBedBreak calls destroyBedParts, which sets to AIR.
+                // This should be okay even after BlockBreakEvent, but ensure no conflicts.
+                // If handleBedBreak is private, its logic needs to be moved here or made public/accessible.
+            } else {
+                // If not in a running game (e.g. lobby, post-game), cancel bed breaking
+                event.setCancelled(true);
+            }
+        }
+        // Optional: Prevent breaking other non-placed blocks during the game?
+        // else {
+        //     Game game = plugin.getGameManager().getPlayerGame(player);
+        //     if (game != null && game.getState() == GameState.RUNNING && !game.isPlacedBlock(block)) {
+        //         event.setCancelled(true);
+        //         MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks placed by players!");
+        //     }
+        // }
     }
 }

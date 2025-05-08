@@ -351,14 +351,19 @@ public class GameScoreboard {
      * Set up the health display below players' names
      */
     public void setupPlayerHealthDisplays() {
+        plugin.getLogger().info("[GameScoreboard] Attempting to setup player health displays...");
         // Only show health displays during actual gameplay, not in lobby
         if (game.getState() != org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
+            plugin.getLogger().info("[GameScoreboard] Game not running, removing health displays.");
             removeHealthDisplays();
             return;
         }
         
         ScoreboardManager manager = Bukkit.getScoreboardManager();
-        if (manager == null) return;
+        if (manager == null) {
+             plugin.getLogger().warning("[GameScoreboard] ScoreboardManager is null, cannot setup health displays.");
+            return;
+        }
         
         try {
             // Use main scoreboard for the health display since it's visible to all players
@@ -367,17 +372,20 @@ public class GameScoreboard {
             // First clean up any existing health objective to avoid conflicts
             Objective existingObj = mainBoard.getObjective("bwhealth");
             if (existingObj != null) {
+                plugin.getLogger().info("[GameScoreboard] Removing existing health objective.");
                 existingObj.unregister();
             }
             
             // Create a new health objective that will automatically track players' health
+            plugin.getLogger().info("[GameScoreboard] Registering new health objective 'bwhealth'.");
             Objective healthObj = mainBoard.registerNewObjective("bwhealth", Criteria.HEALTH, ChatColor.RED + "❤");
             healthObj.setDisplaySlot(DisplaySlot.BELOW_NAME);
+            plugin.getLogger().info("[GameScoreboard] Health objective registered and set to BELOW_NAME.");
             
             // When using Criteria.HEALTH, Minecraft will automatically manage the scores based on player health
             // No need to manually set or update any scores
         } catch (Exception e) {
-            plugin.getLogger().warning("Error setting up health displays: " + e.getMessage());
+            plugin.getLogger().warning("[GameScoreboard] Error setting up health displays: " + e.getMessage());
             e.printStackTrace();
         }
     }
