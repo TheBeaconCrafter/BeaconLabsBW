@@ -96,6 +96,9 @@ public class Game {
         // Set game state to waiting
         state = GameState.WAITING;
         
+        // Clear any fire from the arena before game setup continues
+        clearAllFireInArena();
+        
         // Initialize scoreboard manager
         scoreboardManager = new org.bcnlab.beaconLabsBW.utils.GameScoreboard(plugin, this);
     }
@@ -271,6 +274,10 @@ public class Game {
         if (state != GameState.STARTING) return;
         
         state = GameState.RUNNING;
+        
+        // Clear fire again just before game truly starts (after countdown)
+        // This ensures any fire placed during WAITING/STARTING by other means is also gone.
+        clearAllFireInArena();
         
         // First clean up any leftover items and entities
         clearArenaItems();
@@ -1071,6 +1078,10 @@ public class Game {
             block.setType(Material.AIR);
         }
         placedBlocks.clear();
+
+        // Clear fire at the very end of cleanup as well
+        clearAllFireInArena();
+        
           // Remove dropped items and iron golems (Dream Defenders)
         World world = Bukkit.getWorld(arena.getWorldName());
         if (world != null) {
@@ -1883,5 +1894,33 @@ public class Game {
         broadcastMessage("&e" + player.getName() + " &7is now spectating.");
 
         return true;
+    }
+
+    // Method to clear fire
+    private void clearAllFireInArena() {
+        World world = Bukkit.getWorld(arena.getWorldName());
+        if (world == null) {
+            plugin.getLogger().warning("[Game " + gameId + "] Cannot clear fire: World '" + arena.getWorldName() + "' not found.");
+            return;
+        }
+
+        plugin.getLogger().info("[Game " + gameId + "] Attempting to clear fire in arena: " + arena.getName());
+        int fireBlocksCleared = 0;
+        for (Chunk chunk : world.getLoadedChunks()) {
+            for (int x = 0; x < 16; x++) {
+                for (int y = world.getMinHeight(); y < world.getMaxHeight(); y++) { // Iterate through full world height in chunk
+                    for (int z = 0; z < 16; z++) {
+                        Block block = chunk.getBlock(x, y, z);
+                        if (block.getType() == Material.FIRE) {
+                            block.setType(Material.AIR);
+                            fireBlocksCleared++;
+                        }
+                    }
+                }
+            }
+        }
+        if (fireBlocksCleared > 0) {
+            plugin.getLogger().info("[Game " + gameId + "] Cleared " + fireBlocksCleared + " fire blocks from arena: " + arena.getName());
+        }
     }
 }

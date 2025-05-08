@@ -44,64 +44,116 @@ public class ForceMapCommand implements CommandExecutor, TabCompleter {
         }
         
         String arenaName = args[0];
-        Arena arena = plugin.getArenaManager().getArena(arenaName);
+        Arena targetArena = plugin.getArenaManager().getArena(arenaName);
         
-        if (arena == null) {
+        if (targetArena == null) {
             MessageUtils.sendMessage(sender, plugin.getPrefix() + "&cArena &e" + arenaName + " &cdoesn't exist.");
             return true;
         }
         
-        if (!arena.isConfigured()) {
+        if (!targetArena.isConfigured()) {
             MessageUtils.sendMessage(sender, plugin.getPrefix() + "&cArena &e" + arenaName + " &cis not fully configured.");
             return true;
         }
         
-        // Check for an active waiting lobby
-        Game waitingLobby = plugin.getGameManager().getWaitingLobby();
-        if (waitingLobby == null || waitingLobby.getState() == GameState.RUNNING) {
-            // If there's no waiting lobby or the game is running, just set the next arena
-            plugin.getGameManager().setNextArena(arena);
-            MessageUtils.sendMessage(sender, plugin.getPrefix() + "&aSet &e" + arena.getName() + " &aas the next arena.");
-            return true;
-        }
-        
-        // If the waiting lobby is already on this arena, do nothing
-        if (waitingLobby.getArena().getName().equalsIgnoreCase(arena.getName())) {
-            MessageUtils.sendMessage(sender, plugin.getPrefix() + "&cThe current lobby is already using arena &e" + arena.getName());
-            return true;
-        }
-        
-        // Switch arenas - this requires stopping the current game and starting a new one
-        Set<UUID> currentPlayers = new HashSet<>(waitingLobby.getPlayers());
-        
-        // End the current game
-        plugin.getGameManager().endGame(waitingLobby);
-        
-        // Start a new game with the specified arena
-        Game newGame = plugin.getGameManager().startGame(arena);
-        
-        if (newGame == null) {
-            MessageUtils.sendMessage(sender, plugin.getPrefix() + "&cFailed to start new game with arena &e" + arena.getName());
-            return true;
-        }
-        
-        // Transfer all players to the new game
-        for (UUID playerId : currentPlayers) {
-            Player gamePlayer = Bukkit.getPlayer(playerId);
-            if (gamePlayer != null && gamePlayer.isOnline()) {
-                plugin.getGameManager().addPlayerToGame(gamePlayer, newGame);
+        Game currentWaitingLobby = plugin.getGameManager().getWaitingLobby();
+
+        // Condition for IMMEDIATE switch:
+        // A waiting lobby exists, AND it's in WAITING or STARTING state.
+        if (currentWaitingLobby != null && 
+            (currentWaitingLobby.getState() == GameState.WAITING || currentWaitingLobby.getState() == GameState.STARTING)) {
+            
+            // If the waiting lobby is already on this target arena, do nothing specific other than inform.
+            if (currentWaitingLobby.getArena().getName().equalsIgnoreCase(targetArena.getName())) {
+                MessageUtils.sendMessage(sender, plugin.getPrefix() + "&eThe current lobby is already using arena &6" + targetArena.getName() + "&e.");
+                return true;
+            }
+            
+            MessageUtils.sendMessage(sender, plugin.getPrefix() + "&6Switching active lobby to &e" + targetArena.getName() + "&6...");
+
+            Set<UUID> currentPlayers = new HashSet<>(currentWaitingLobby.getPlayers());
+            
+            // End the current game (this should handle countdown cancellation if it's in STARTING state)
+            plugin.getGameManager().endGame(currentWaitingLobby); // This also nullifies GameManager.waitingLobby if it matches
+            
+            // Start a new game with the specified arena
+            Game newGame = plugin.getGameManager().startGame(targetArena);
+            
+            if (newGame == null) {
+                MessageUtils.sendMessage(sender, plugin.getPrefix() + "&cFailed to start new game with arena &e" + targetArena.getName() + ". The previous lobby was ended.");
+                // Attempt to restart a lobby with any available map or the old map if possible?
+                // For now, admin needs to manually start a new game or players need to rejoin.
+                return true;
+            }
+            
+            // Transfer all players to the new game
+            for (UUID playerId : currentPlayers) {
+                Player gamePlayer = Bukkit.getPlayer(playerId);
+                if (gamePlayer != null && gamePlayer.isOnline()) {
+                    // Explicitly remove player from any old game context first
+                    // This ensures their state is fully reset and mappings cleared by GameManager
+                    plugin.getGameManager().removePlayerFromGame(gamePlayer);
+                    
+                    // Now, add to the new game
+                    if (!plugin.getGameManager().addPlayerToGame(gamePlayer, newGame)) {
+                        MessageUtils.sendMessage(sender, plugin.getPrefix() + "&cWarning: Failed to transfer player &e" + gamePlayer.getName() + " &cto the new lobby.");
+                    }
+                }
+            }
+            
+            // Announce to players in the new game
+            newGame.broadcastMessage("&aThe map has been changed to &e" + targetArena.getName() + "&a by an admin.");
+            MessageUtils.sendMessage(sender, plugin.getPrefix() + "&aSuccessfully switched arena to &e" + targetArena.getName());
+
+        } else {
+            // Fallback: No suitable WAITING/STARTING lobby for immediate player transfer,
+            // OR the existing lobby is RUNNING or in another state.
+            // The goal now is to ensure the targetArena becomes the active lobby.
+
+            MessageUtils.sendMessage(sender, plugin.getPrefix() + "&6Attempting to set &e" + targetArena.getName() + " &6as the active lobby...");
+
+            // 1. End any existing game that might be considered the "waitingLobby" by GameManager, 
+            if (currentWaitingLobby != null) {
+                MessageUtils.sendMessage(sender, plugin.getPrefix() + "&7Stopping current game/lobby for arena '" + currentWaitingLobby.getArena().getName() + "' (State: " + currentWaitingLobby.getState() + ").");
+                plugin.getGameManager().endGame(currentWaitingLobby); 
+            }
+
+            // 2. Check if there's ANY other game running on the *targetArena* itself. 
+            Game gameOnTargetArena = plugin.getGameManager().getActiveGames().get(targetArena.getName().toLowerCase());
+            if (gameOnTargetArena != null) {
+                 MessageUtils.sendMessage(sender, plugin.getPrefix() + "&7Stopping existing game on target arena '" + targetArena.getName() + "' (State: " + gameOnTargetArena.getState() + ").");
+                 plugin.getGameManager().endGame(gameOnTargetArena);
+            }
+            
+            // 3. Now, start a new game with the targetArena.
+            Game newLobby = plugin.getGameManager().startGame(targetArena);
+
+            if (newLobby != null) {
+                MessageUtils.sendMessage(sender, plugin.getPrefix() + "&aSuccessfully started new lobby with &e" + targetArena.getName() + "&a. Players can now join it.");
+                
+                // Teleport the command sender to the new lobby if they are a player
+                if (sender instanceof Player) {
+                    Player adminPlayer = (Player) sender;
+                    // We need to add the admin to the game for teleportation to lobby spawn to work as expected
+                    // and for them to be part of this new lobby context.
+                    if (plugin.getGameManager().addPlayerToGame(adminPlayer, newLobby)) {
+                        MessageUtils.sendMessage(adminPlayer, plugin.getPrefix() + "&6Teleporting you to the new lobby for &e" + targetArena.getName() + "&6.");
+                        // Game.addPlayer already teleports to lobby and resets player.
+                    } else {
+                        MessageUtils.sendMessage(adminPlayer, plugin.getPrefix() + "&cCould not automatically add you to the new lobby. Please join manually.");
+                        // As a fallback, try a direct teleport to the arena's lobby spawn if known, 
+                        // but being in the game is better.
+                        if (targetArena.getLobbySpawn() != null && targetArena.getLobbySpawn().toBukkitLocation() != null) {
+                            adminPlayer.teleport(targetArena.getLobbySpawn().toBukkitLocation());
+                        }
+                    }
+                }
+            } else {
+                MessageUtils.sendMessage(sender, plugin.getPrefix() + "&cFailed to start a new lobby with &e" + targetArena.getName() + "&c. Please check server logs.");
+                plugin.getGameManager().setNextArena(targetArena);
+                MessageUtils.sendMessage(sender, plugin.getPrefix() + "&6Set &e" + targetArena.getName() + " &6as the next arena instead.");
             }
         }
-        
-        // Broadcast map change
-        for (UUID playerId : newGame.getPlayers()) {
-            Player gamePlayer = Bukkit.getPlayer(playerId);
-            if (gamePlayer != null) {
-                MessageUtils.sendMessage(gamePlayer, plugin.getPrefix() + "&aThe map has been changed to &e" + arena.getName());
-            }
-        }
-        
-        MessageUtils.sendMessage(sender, plugin.getPrefix() + "&aSuccessfully switched arena to &e" + arena.getName());
         return true;
     }
     
