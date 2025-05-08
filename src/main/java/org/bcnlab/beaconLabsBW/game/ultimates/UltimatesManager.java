@@ -123,7 +123,7 @@ public class UltimatesManager implements Listener {
 
         org.bcnlab.beaconLabsBW.game.Game game = plugin.getGameManager().getPlayerGame(player);
         if (game == null || !game.areUltimatesActive()) {
-            player.sendMessage(ChatColor.RED + "Ultimates are not active yet!");
+            player.sendMessage(plugin.getPrefix() + ChatColor.RED + "Ultimates are not active yet!");
             return false;
         }
         
@@ -578,7 +578,7 @@ public class UltimatesManager implements Listener {
         if (game == null || !game.areUltimatesActive()) {
             player.setAllowFlight(true); // Keep flight enabled if they were supposed to have it
             player.setFlying(false);     // But cancel the current jump
-            player.sendMessage(ChatColor.RED + "Ultimates are not active yet!");
+            player.sendMessage(plugin.getPrefix() + ChatColor.RED + "Ultimates are not active yet!");
             return false;
         }
         

@@ -1078,9 +1078,6 @@ public class Game {
                 player.setGameMode(org.bukkit.GameMode.SPECTATOR);
             }
         }
-        
-        // Display game stats
-        displayGameStats();
           // Schedule game cleanup
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             // Kick all players from the server
@@ -1133,8 +1130,8 @@ public class Game {
      * Display game stats to all players
      */
     private void displayGameStats() {
-        broadcastMessage("&6&l&m-------------------------------------");
-        broadcastMessage("                     &6&lGAME STATS");
+        broadcastMessage("&6&l&m----------------------------------------");
+        broadcastMessage("                 &6&lGAME STATISTICS");
         broadcastMessage(""); // Spacer
 
         // Combine all players who participated (based on kills, deaths, or bed breaks)
@@ -1150,15 +1147,18 @@ public class Game {
             // Optional: Sort players by kills or another metric
             sortedParticipants.sort((p1, p2) -> Integer.compare(playerKills.getOrDefault(p2, 0), playerKills.getOrDefault(p1, 0))); // Sort descending by kills
 
-            broadcastMessage("            &ePlayer            &aKills &cDeaths  &bK/D  &dBeds");
+            broadcastMessage("&e   Player           &a Kills &c Deaths &b  K/D  &d Beds");
             broadcastMessage("&7&m-------------------------------------");
 
             for (UUID playerId : sortedParticipants) {
                 Player player = Bukkit.getPlayer(playerId);
                 String playerName = player != null ? player.getName() : ("Offline(" + playerId.toString().substring(0, 6) + ")");
                 
-                // Ensure player name fits in alignment (adjust padding as needed)
-                playerName = String.format("%-18s", playerName); // Left-align, pad to 18 chars
+                // Ensure player name fits in alignment with fixed width
+                if (playerName.length() > 16) {
+                    playerName = playerName.substring(0, 13) + "...";
+                }
+                playerName = String.format("%-16s", playerName); // Left-align, pad to 16 chars
 
                 int kills = playerKills.getOrDefault(playerId, 0);
                 int deaths = playerDeaths.getOrDefault(playerId, 0);
@@ -1173,8 +1173,8 @@ public class Game {
                 }
                 String kdrFormatted = String.format("%.2f", kdr);
 
-                // Format stats line
-                String statsLine = String.format("&e%s &7- &a%3d   &c%3d   &b%5s  &d%3d", 
+                // Format stats line with better alignment
+                String statsLine = String.format("&e%s &a  %-5d &c  %-5d &b  %-5s &d  %-3d", 
                                                playerName, 
                                                kills, 
                                                deaths, 
@@ -1185,7 +1185,7 @@ public class Game {
         }
 
         broadcastMessage(""); // Spacer
-        broadcastMessage("&6&l&m-------------------------------------");
+        broadcastMessage("&6&l&m----------------------------------------");
     }
     
     /**

@@ -212,14 +212,6 @@ public class GameScoreboard {
      * Start the scoreboard update task
      */
     public void startTask() {
-        // Set up health displays if game is running
-        if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
-            setupPlayerHealthDisplays();
-        } else {
-            // Remove health displays if not in-game
-            removeHealthDisplays();
-        }
-        
         updateTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             // Force update all players' scoreboards to keep player counts current
             for (UUID playerId : game.getPlayers()) {
@@ -232,14 +224,6 @@ public class GameScoreboard {
                         updateScoreboard(player, scoreboard, objective);
                     }
                 }
-            }
-            
-            // Only update health displays if in a running game
-            if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
-                updatePlayerHealthDisplays();
-            } else {
-                // Remove health displays if not in-game
-                removeHealthDisplays();
             }
         }, 20L, 10L); // Update every half second for more responsive health display
     }
@@ -354,94 +338,5 @@ public class GameScoreboard {
         } else {
             plugin.getLogger().warning("ScoreboardManager was null during cleanup (likely during shutdown).");
         }
-    }
-    /**
-     * Set up the health display below players' names
-     */
-    public void setupPlayerHealthDisplays() {
-        plugin.getLogger().info("[GameScoreboard] Attempting to setup player health displays...");
-        // Only show health displays during actual gameplay, not in lobby
-        if (game.getState() != org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
-            plugin.getLogger().info("[GameScoreboard] Game not running, removing health displays.");
-            removeHealthDisplays();
-            return;
-        }
-        
-        ScoreboardManager manager = Bukkit.getScoreboardManager();
-        if (manager == null) {
-             plugin.getLogger().warning("[GameScoreboard] ScoreboardManager is null, cannot setup health displays.");
-            return;
-        }
-        
-        try {
-            Scoreboard mainBoard = manager.getMainScoreboard();
-            
-            // Clean up old objectives if they exist
-            Objective existingObj = mainBoard.getObjective("bwhealth");
-            if (existingObj != null) {
-                plugin.getLogger().info("[GameScoreboard] Removing existing health objective 'bwhealth'.");
-                existingObj.unregister();
-            }
-            Objective existingObjNew = mainBoard.getObjective("bw_hp");
-            if (existingObjNew != null) {
-                plugin.getLogger().info("[GameScoreboard] Removing existing health objective 'bw_hp'.");
-                existingObjNew.unregister();
-            }
-            
-            // Create objective with new name
-            plugin.getLogger().info("[GameScoreboard] Registering new health objective 'bw_hp'.");
-            Objective healthObj = mainBoard.registerNewObjective("bw_hp", Criteria.HEALTH, "Health");
-            healthObj.setDisplaySlot(DisplaySlot.BELOW_NAME);
-            plugin.getLogger().info("[GameScoreboard] Health objective 'bw_hp' registered and set to BELOW_NAME.");
-            
-        } catch (Exception e) {
-            plugin.getLogger().warning("[GameScoreboard] Error setting up health displays: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-      /**
-     * Remove health display objectives
-     */
-    private void removeHealthDisplays() {
-        try {
-            ScoreboardManager manager = Bukkit.getScoreboardManager();
-            if (manager == null) return;
-            
-            Scoreboard mainBoard = manager.getMainScoreboard();
-            Objective healthObj = mainBoard.getObjective("bw_hp");
-            if (healthObj != null) {
-                healthObj.unregister();
-            }
-            Objective healthObjOld = mainBoard.getObjective("bwhealth");
-            if (healthObjOld != null) {
-                healthObjOld.unregister();
-            }
-        } catch (Exception e) {
-            // Just log errors but don't crash
-            plugin.getLogger().warning("Error removing health display: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Update player health displays
-     * This method is kept for compatibility, but doesn't need to do anything anymore
-     * as Minecraft automatically tracks health criteria
-     */
-    public void updatePlayerHealthDisplays() {
-        // Only ensure health display exists in a running game
-        if (game.getState() == org.bcnlab.beaconLabsBW.game.GameState.RUNNING) {
-            // Check if the health display objective still exists, recreate if needed
-            ScoreboardManager manager = Bukkit.getScoreboardManager();
-            if (manager != null) {
-                Scoreboard mainBoard = manager.getMainScoreboard();
-                if (mainBoard.getObjective("bw_hp") == null) {
-                    setupPlayerHealthDisplays();
-                }
-            }
-        } else {
-            // Remove health display when not in a running game
-            removeHealthDisplays();
-        }
-        // No need to manually update scores - Minecraft handles this automatically
     }
 }
