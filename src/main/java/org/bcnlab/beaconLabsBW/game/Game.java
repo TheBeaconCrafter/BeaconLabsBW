@@ -19,6 +19,7 @@ import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -486,12 +487,13 @@ public class Game {
      * @param player The player
      */
     private void giveInitialEquipment(Player player) {
-        // Don't give a wooden sword if player is Swordsman in ultimates mode
-        if (!(gameMode == GameMode.ULTIMATES && 
-              getPlayerUltimateClass(player.getUniqueId()) == org.bcnlab.beaconLabsBW.game.ultimates.UltimateClass.SWORDSMAN)) {
-            // Wooden sword
-            player.getInventory().addItem(new ItemStack(Material.WOODEN_SWORD));
-        }
+        // Give a wooden sword by default.
+        // If an ultimate class provides a better sword or replaces it, that logic will handle it.
+        player.getInventory().addItem(new ItemStack(Material.WOODEN_SWORD)); // Re-added
+        
+        // Give basic wooden tools
+        // player.getInventory().addItem(new ItemStack(Material.WOODEN_PICKAXE)); // Removed
+        // player.getInventory().addItem(new ItemStack(Material.WOODEN_AXE)); // Removed
         
         // No more wool blocks at the start - players should buy them from the shop
     }
@@ -638,30 +640,44 @@ public class Game {
      * Handle a player death
      *
      * @param player The player who died
-     * @param killer The killer (can be null)
+     * @param killer The player who killed this player, or null if no killer or self-kill
      */
     public void handlePlayerDeath(Player player, Player killer) {
         // Check if player is in this game
         if (!players.contains(player.getUniqueId())) return;
+
+        // Downgrade tools before anything else happens to inventory or stats
+        downgradeTools(player);
         
-        // Record stats
+        // Get last damage cause for void check
+        EntityDamageEvent lastDamageCause = player.getLastDamageCause();
+        boolean voidDeath = (lastDamageCause != null && lastDamageCause.getCause() == EntityDamageEvent.DamageCause.VOID);
+
+        // Record stats & Announce Kill/Death
         recordDeath(player);
-        if (killer != null && players.contains(killer.getUniqueId())) {
+        String playerTeamDisplay = getTeamDisplayName(playerTeams.get(player.getUniqueId()));
+        
+        if (killer != null && players.contains(killer.getUniqueId()) && killer != player) { 
             recordKill(killer);
-            
-            // Announce kill
-            String playerTeam = playerTeams.get(player.getUniqueId());
-            String killerTeam = playerTeams.get(killer.getUniqueId());
-            
-            broadcastMessage(getTeamDisplayName(killerTeam) + " &f" + killer.getName() + 
-                    " &7killed " + getTeamDisplayName(playerTeam) + " &f" + player.getName());
+            String killerTeamDisplay = getTeamDisplayName(playerTeams.get(killer.getUniqueId()));
+            broadcastMessage(killerTeamDisplay + " &f" + killer.getName() + 
+                    " &7killed " + playerTeamDisplay + " &f" + player.getName());
+        } else if (voidDeath) {
+            // Handle void death announcement
+            broadcastMessage(playerTeamDisplay + " &f" + player.getName() + " &7fell into the void.");
+            killer = null; // Ensure killer is null for resource transfer logic if void death
+        } else {
+            // Handle other deaths (e.g., environmental, suicide - without specific cause messages for now)
+             broadcastMessage(playerTeamDisplay + " &f" + player.getName() + " &7died.");
+             killer = null; // Treat as no killer for resource transfer
         }
         
         // Get their team
         String team = playerTeams.get(player.getUniqueId());
         if (team == null) return;
-          // Drop their resources
-        dropPlayerResources(player);
+
+        // Give resources to killer or delete them
+        transferOrDeletePlayerResources(player, killer);
         
         // Handle ultimate abilities that trigger on death
         if (gameMode == GameMode.ULTIMATES) {
@@ -690,34 +706,49 @@ public class Game {
                 }
             }, 100L); // 5 seconds
         }
-    }    /**
-     * Drop resources from a player's inventory
-     *
+    }
+    
+    /**
+     * Give resources to killer or delete them
      * @param player The player
+     * @param killer The player who killed this player, or null if no killer or self-kill
      */
-    private void dropPlayerResources(Player player) {
-        // List of materials to drop
+    private void transferOrDeletePlayerResources(Player player, Player killer) {
         List<Material> resourceTypes = Arrays.asList(
                 Material.IRON_INGOT,
                 Material.GOLD_INGOT,
                 Material.EMERALD,
                 Material.DIAMOND
         );
-        
-        // Check death cause to determine if items should be dropped
-        EntityDamageEvent lastDamage = player.getLastDamageCause();
-        Player killer = player.getKiller();
-        
-        // If player died in the void without being killed by a player, don't drop resources
-        if (lastDamage != null && lastDamage.getCause() == EntityDamageEvent.DamageCause.VOID && killer == null) {
-            return;
-        }
-        
-        // Drop resources for other death causes or when killed by another player
+
+        ArrayList<ItemStack> itemsToTransfer = new ArrayList<>();
         for (ItemStack item : player.getInventory().getContents()) {
             if (item != null && resourceTypes.contains(item.getType())) {
-                player.getWorld().dropItemNaturally(player.getLocation(), item);
+                itemsToTransfer.add(item.clone()); // Clone to avoid issues with concurrent modification
             }
+        }
+        
+        // Manually remove items from the dying player's inventory
+        for (Material resourceType : resourceTypes) {
+            player.getInventory().remove(resourceType);
+        }
+
+        if (killer != null && killer.isOnline() && players.contains(killer.getUniqueId()) && killer != player) {
+            // Transfer to killer's inventory
+            for (ItemStack itemToGive : itemsToTransfer) {
+                HashMap<Integer, ItemStack> leftover = killer.getInventory().addItem(itemToGive);
+                if (!leftover.isEmpty()) {
+                    // If killer's inventory is full, drop remaining at killer's location (or decide to delete)
+                    // For now, let's drop at killer's location as a common fallback.
+                    for (ItemStack drop : leftover.values()) {
+                        killer.getWorld().dropItemNaturally(killer.getLocation(), drop);
+                    }
+                }
+            }
+            MessageUtils.sendMessage(killer, plugin.getPrefix() + "&aYou received resources from your kill!");
+        } else {
+            // If no killer, or void death, or killer is not valid, resources are deleted (already removed from player's inv)
+            // No items are dropped on the ground at the death location.
         }
     }
     
@@ -759,10 +790,10 @@ public class Game {
      * @param player The player
      */
     private void respawnPlayer(Player player) {
-        // Save player's permanent tools before resetting
+        // Save player's permanent tools AND armor before resetting
         Map<Material, ItemStack> permanentItems = savePermanentItems(player);
         
-        // Reset player state
+        // Reset player state (clears inventory, effects, etc.)
         resetPlayer(player);
         
         // Teleport to team spawn
@@ -773,17 +804,41 @@ public class Game {
                 SerializableLocation spawnLoc = teamData.getSpawnLocation();
                 if (spawnLoc != null) {
                     player.teleport(spawnLoc.toBukkitLocation());
-                }                // Give team armor and initial equipment
+                }
+                // Give basic team armor FIRST
                 giveTeamArmor(player, teamData);
+                
+                // Give initial equipment (e.g., wooden sword, non-armor items)
                 giveInitialEquipment(player);
-                  // Apply team upgrades
+
+                // Re-equip saved permanent armor and add saved tools
+                // This will overwrite the basic team armor if better armor was saved.
+                List<ItemStack> toolsToRestore = new ArrayList<>();
+                for (ItemStack savedItem : permanentItems.values()) {
+                    Material type = savedItem.getType();
+                    if (type.name().contains("HELMET")) {
+                        player.getInventory().setHelmet(savedItem);
+                    } else if (type.name().contains("CHESTPLATE")) {
+                        player.getInventory().setChestplate(savedItem);
+                    } else if (type.name().contains("LEGGINGS")) {
+                        player.getInventory().setLeggings(savedItem);
+                    } else if (type.name().contains("BOOTS")) {
+                        player.getInventory().setBoots(savedItem);
+                    } else {
+                        // It's a tool, add to list to be given to inventory
+                        toolsToRestore.add(savedItem);
+                    }
+                }
+                // Add tools to inventory
+                for (ItemStack tool : toolsToRestore) {
+                    player.getInventory().addItem(tool);
+                }
+                
+                // Apply team upgrades (sharpness, protection on currently equipped armor, haste)
                 applyTeamUpgrades(player);
                 
-                // Fix armor durability
+                // Fix armor durability again after all armor is set and upgrades applied
                 org.bcnlab.beaconLabsBW.utils.ArmorHandler.fixPlayerArmor(player);
-                
-                // Restore permanent tools
-                restorePermanentItems(player, permanentItems);
                 
                 // Give ultimates items if in ultimates mode
                 if (gameMode == GameMode.ULTIMATES) {
@@ -794,7 +849,7 @@ public class Game {
     }
     
     /**
-     * Save permanent items (tools) from a player's inventory
+     * Save permanent items (tools and armor) from a player's inventory
      *
      * @param player The player
      * @return Map of saved items
@@ -802,41 +857,49 @@ public class Game {
     private Map<Material, ItemStack> savePermanentItems(Player player) {
         Map<Material, ItemStack> saved = new HashMap<>();
         
-        // Check for permanent tools in description
+        // Check for permanent tools and armor in inventory
         for (ItemStack item : player.getInventory().getContents()) {
-            if (item != null && !item.getType().isAir() && isPermanentTool(item)) {
+            if (item != null && !item.getType().isAir() && isPermanentToolOrArmor(item)) { // Renamed check method
                 saved.put(item.getType(), item.clone());
             }
         }
-        
+        // Also check equipped armor slots
+        for (ItemStack item : player.getInventory().getArmorContents()) {
+            if (item != null && !item.getType().isAir() && isPermanentToolOrArmor(item)) { // Renamed check method
+                 if (!saved.containsKey(item.getType())) { // Avoid duplicates if also in main inventory (though unlikely for armor)
+                    saved.put(item.getType(), item.clone());
+                }
+            }
+        }
         return saved;
     }
     
     /**
-     * Check if an item is a permanent tool
+     * Check if an item is a permanent tool or armor
      * 
      * @param item The item to check
      * @return true if permanent, false otherwise
      */
-    private boolean isPermanentTool(ItemStack item) {
+    private boolean isPermanentToolOrArmor(ItemStack item) { // Renamed method
         if (item == null || item.getType().isAir()) return false;
         
         Material type = item.getType();
-        return type == Material.SHEARS || 
-               type.name().contains("PICKAXE") ||
-               type.name().contains("AXE");
-    }
-    
-    /**
-     * Restore permanent items to player's inventory
-     * 
-     * @param player The player
-     * @param items Map of items to restore
-     */
-    private void restorePermanentItems(Player player, Map<Material, ItemStack> items) {
-        for (ItemStack item : items.values()) {
-            player.getInventory().addItem(item);
-        }
+        // Check for tools
+        boolean isTool = type == Material.SHEARS || 
+               type.name().contains("PICKAXE") || // Matches WOODEN_PICKAXE, STONE_PICKAXE, etc.
+               type.name().contains("AXE");      // Matches WOODEN_AXE, STONE_AXE, etc.
+        if (isTool) return true;
+
+        // Check for armor (based on material name, assuming standard armor types)
+        // This relies on permanent armor from shop having appropriate material types.
+        boolean isArmor = type.name().contains("HELMET") ||
+               type.name().contains("CHESTPLATE") ||
+               type.name().contains("LEGGINGS") ||
+               type.name().contains("BOOTS");
+        // Ensure it's not leather armor unless specifically marked permanent (which it isn't by default)
+        if (isArmor && type.name().startsWith("LEATHER_")) return false; // Default team armor is not "permanent"
+        
+        return isArmor; // If it made it here and isArmor, it's non-leather armor
     }
     
     /**
@@ -1834,7 +1897,7 @@ public class Game {
             case KANGAROO:
                 // Save 50% of resources on death
                 if (Math.random() < 0.5) {
-                    // Already handled in dropPlayerResources method
+                    // Already handled in transferOrDeletePlayerResources method
                     MessageUtils.sendMessage(player, "&e&lKANGAROO: &aYou saved some resources in your inventory!");
                 }
                 break;
@@ -1923,4 +1986,65 @@ public class Game {
             plugin.getLogger().info("[Game " + gameId + "] Cleared " + fireBlocksCleared + " fire blocks from arena: " + arena.getName());
         }
     }
+
+    private void downgradeTools(Player player) {
+        ItemStack[] contents = player.getInventory().getContents();
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack item = contents[i];
+            if (item == null || item.getType().isAir()) continue;
+
+            Material currentType = item.getType();
+            Material downgradedType = null;
+
+            // Determine downgrade path for pickaxes
+            if (currentType == Material.DIAMOND_PICKAXE) downgradedType = Material.IRON_PICKAXE;
+            else if (currentType == Material.IRON_PICKAXE) downgradedType = Material.STONE_PICKAXE;
+            else if (currentType == Material.STONE_PICKAXE) downgradedType = Material.WOODEN_PICKAXE;
+            // For WOODEN_PICKAXE, it remains wooden (no further downgrade by material)
+
+            // Determine downgrade path for axes
+            else if (currentType == Material.DIAMOND_AXE) downgradedType = Material.IRON_AXE;
+            else if (currentType == Material.IRON_AXE) downgradedType = Material.STONE_AXE;
+            else if (currentType == Material.STONE_AXE) downgradedType = Material.WOODEN_AXE;
+            // For WOODEN_AXE, it remains wooden
+
+            if (downgradedType != null) {
+                ItemStack downgradedItem = new ItemStack(downgradedType, 1);
+                // Attempt to copy relevant ItemMeta (like unbreakability, lore) if needed.
+                // For now, relying on the shop to set these properties when tools are acquired/upgraded.
+                // The name might change if it was specific (e.g. "Diamond Pickaxe"), 
+                // but the lore "Keep on Death (may downgrade)" should ideally be preserved or re-added.
+                // For simplicity, we create a new basic item of the downgraded type.
+                // The shop adds lore; if we want to keep it, we need to copy meta.
+                if (item.hasItemMeta()) {
+                    ItemMeta oldMeta = item.getItemMeta();
+                    ItemMeta newMeta = downgradedItem.getItemMeta();
+                    if (newMeta != null && oldMeta != null) {
+                        if (oldMeta.hasDisplayName()) {
+                            // Update display name to reflect new tier
+                            String oldName = oldMeta.getDisplayName();
+                            if (oldName.contains("Diamond")) newMeta.setDisplayName(oldName.replace("Diamond", ChatColor.GRAY + "Iron")); // Example, needs proper color handling
+                            else if (oldName.contains("Iron")) newMeta.setDisplayName(oldName.replace("Iron", ChatColor.GRAY + "Stone"));
+                            else if (oldName.contains("Stone")) newMeta.setDisplayName(oldName.replace("Stone", ChatColor.GRAY + "Wood"));
+                            else newMeta.setDisplayName(ChatColor.WHITE + downgradedType.name().toLowerCase().replace("_", " ")); // Fallback name
+                        } else {
+                             newMeta.setDisplayName(ChatColor.WHITE + downgradedType.name().toLowerCase().replace("_", " "));
+                        }
+                        if (oldMeta.hasLore()) {
+                            newMeta.setLore(oldMeta.getLore()); // Preserve lore like "Keep on Death"
+                        }
+                        if (oldMeta.isUnbreakable()) {
+                            newMeta.setUnbreakable(true);
+                            newMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_UNBREAKABLE);
+                        }
+                        downgradedItem.setItemMeta(newMeta);
+                    }
+                }
+                contents[i] = downgradedItem;
+            }
+        }
+        player.getInventory().setContents(contents);
+    }
 }
+
+

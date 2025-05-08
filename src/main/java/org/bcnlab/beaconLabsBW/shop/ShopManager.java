@@ -23,6 +23,23 @@ public class ShopManager {
     private final BeaconLabsBW plugin;
     private final List<ShopItem> shopItems = new ArrayList<>();
     private final Map<UUID, ShopCategory> playerCategory = new HashMap<>();
+
+    // Helper class for Tool Upgrade Information
+    private static class ToolUpgradeInfo {
+        final Material nextTierMaterial;
+        final Material currency;
+        final int cost;
+        final String displayName;
+        final boolean isMaxTier;
+
+        ToolUpgradeInfo(Material nextTierMaterial, Material currency, int cost, String displayName, boolean isMaxTier) {
+            this.nextTierMaterial = nextTierMaterial;
+            this.currency = currency;
+            this.cost = cost;
+            this.displayName = displayName;
+            this.isMaxTier = isMaxTier;
+        }
+    }
     
     /**
      * Creates a new ShopManager
@@ -40,7 +57,7 @@ public class ShopManager {
      */
     private void registerItems() {
         // Quick buy category
-        addItem(ShopCategory.QUICK_BUY, new ShopItem("Wool", Material.WHITE_WOOL, 4, Material.IRON_INGOT, 1, "4 wool blocks"));
+        addItem(ShopCategory.QUICK_BUY, new ShopItem("Wool", Material.WHITE_WOOL, 16, Material.IRON_INGOT, 4, "16 wool blocks"));
         addItem(ShopCategory.QUICK_BUY, new ShopItem("Stone Sword", Material.STONE_SWORD, 1, Material.IRON_INGOT, 10, "Stone sword"));
         addItem(ShopCategory.QUICK_BUY, new ShopItem("Chainmail Armor", Material.CHAINMAIL_CHESTPLATE, 1, Material.IRON_INGOT, 40, "Chainmail armor protection"));
         addItem(ShopCategory.QUICK_BUY, new ShopItem("Bow", Material.BOW, 1, Material.GOLD_INGOT, 12, "Bow"));
@@ -75,7 +92,7 @@ public class ShopManager {
         addItem(ShopCategory.MELEE, new ShopItem("Iron Sword", Material.IRON_SWORD, 1, Material.GOLD_INGOT, 7, "Iron sword"));
         addItem(ShopCategory.MELEE, new ShopItem("Diamond Sword", Material.DIAMOND_SWORD, 1, Material.EMERALD, 4, "Diamond sword"));
         addItem(ShopCategory.MELEE, new ShopItem("Knockback Stick", Material.STICK, 1, Material.GOLD_INGOT, 5, "Knockback I stick"));
-        
+
         // Armor category
         addItem(ShopCategory.ARMOR, new ShopItem("Chainmail Armor", Material.CHAINMAIL_CHESTPLATE, 1, Material.IRON_INGOT, 40, "Permanent chainmail armor"));
         addItem(ShopCategory.ARMOR, new ShopItem("Iron Armor", Material.IRON_CHESTPLATE, 1, Material.GOLD_INGOT, 12, "Permanent iron armor"));
@@ -83,8 +100,8 @@ public class ShopManager {
         
         // Tools category
         addItem(ShopCategory.TOOLS, new ShopItem("Shears", Material.SHEARS, 1, Material.IRON_INGOT, 20, "Permanent shears"));
-        addItem(ShopCategory.TOOLS, new ShopItem("Pickaxe", Material.IRON_PICKAXE, 1, Material.IRON_INGOT, 10, "Permanent iron pickaxe"));
-        addItem(ShopCategory.TOOLS, new ShopItem("Axe", Material.IRON_AXE, 1, Material.IRON_INGOT, 10, "Permanent iron axe"));
+        addItem(ShopCategory.TOOLS, new ShopItem("Upgrade Pickaxe", Material.WOODEN_PICKAXE, 1, Material.AIR, 0, "Upgrade your Pickaxe tier by tier."));
+        addItem(ShopCategory.TOOLS, new ShopItem("Upgrade Axe", Material.WOODEN_AXE, 1, Material.AIR, 0, "Upgrade your Axe tier by tier."));
         
         // Ranged category
         addItem(ShopCategory.RANGED, new ShopItem("Bow", Material.BOW, 1, Material.GOLD_INGOT, 12, "Bow"));
@@ -102,6 +119,8 @@ public class ShopManager {
         addItem(ShopCategory.UTILITY, new ShopItem("TNT", Material.TNT, 1, Material.GOLD_INGOT, 4, "TNT (instant ignition)"));
         addItem(ShopCategory.UTILITY, new ShopItem("Water Bucket", Material.WATER_BUCKET, 1, Material.GOLD_INGOT, 3, "Water bucket"));
         addItem(ShopCategory.UTILITY, new ShopItem("Bridge Egg", Material.EGG, 1, Material.EMERALD, 2, "Creates bridge in direction thrown"));
+        addItem(ShopCategory.UTILITY, new ShopItem("Shield", Material.SHIELD, 1, Material.GOLD_INGOT, 10, "Standard shield"));
+        addItem(ShopCategory.UTILITY, new ShopItem("Fireball", Material.FIRE_CHARGE, 1, Material.IRON_INGOT, 40, "Throwable Fireball!"));
         addItem(ShopCategory.UTILITY, new ShopItem("Dream Defender", Material.VILLAGER_SPAWN_EGG, 1, Material.IRON_INGOT, 120, "Iron Golem to defend your base"));
     }
     
@@ -184,7 +203,7 @@ public class ShopManager {
         slot = 18;
         for (ShopItem item : shopItems) {
             if (item.getCategory() == category) {
-                inventory.setItem(slot++, createShopItemStack(item));
+                inventory.setItem(slot++, createShopItemStack(item, player));
             }
         }
         
@@ -222,46 +241,90 @@ public class ShopManager {
      * Create an ItemStack for a shop item
      * 
      * @param shopItem The shop item
+     * @param player The player
      * @return ItemStack representation
      */
-    private ItemStack createShopItemStack(ShopItem shopItem) {
+    private ItemStack createShopItemStack(ShopItem shopItem, Player player) {
         ItemStack item = new ItemStack(shopItem.getMaterial());
         ItemMeta meta = item.getItemMeta();
         
         if (meta != null) {
-            meta.setDisplayName(ChatColor.WHITE + shopItem.getName());
-            
+            String displayName = shopItem.getName();
             List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.GRAY + shopItem.getDescription());
-            lore.add("");              String costText = ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + shopItem.getCost() + " ";
-            Material currency = shopItem.getCurrency();
-            
-            if (shopItem.isFree()) {
-                lore.add(ChatColor.GREEN + "FREE");
-            } else if (currency == null) {
-                lore.add(costText + "Unknown");
-            } else {
-                switch (currency) {
-                    case IRON_INGOT -> lore.add(costText + ChatColor.WHITE + "Iron");
-                    case GOLD_INGOT -> lore.add(costText + ChatColor.GOLD + "Gold");
-                    case EMERALD -> lore.add(costText + ChatColor.GREEN + "Emerald");
-                    default -> lore.add(costText + "Unknown");
+            Material displayMaterial = shopItem.getMaterial();
+            int displayCost = shopItem.getCost();
+            Material displayCurrency = shopItem.getCurrency();
+            boolean purchaseDisabled = false;
+
+            if (shopItem.getName().equals("Upgrade Pickaxe")) {
+                ToolUpgradeInfo upgradeInfo = getNextToolUpgradeInfo(player, "PICKAXE");
+                displayName = upgradeInfo.isMaxTier ? ChatColor.GREEN + upgradeInfo.displayName : ChatColor.YELLOW + "Upgrade to " + upgradeInfo.displayName;
+                if(upgradeInfo.isMaxTier) {
+                    displayMaterial = Material.DIAMOND_PICKAXE; // Show diamond pick if maxed
+                } else {
+                    // Show the icon of the tier they are ABOUT to purchase, or wooden if buying the first one.
+                    displayMaterial = upgradeInfo.nextTierMaterial;
                 }
+
+                lore.add(ChatColor.GRAY + shopItem.getDescription());
+                lore.add("");
+                if (upgradeInfo.isMaxTier) {
+                    lore.add(ChatColor.GREEN + "Max Tier Reached!");
+                    purchaseDisabled = true;
+                } else {
+                    displayCost = upgradeInfo.cost;
+                    displayCurrency = upgradeInfo.currency;
+                    lore.add(ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + displayCost + " " + MessageUtils.colorize(getCurrencyName(displayCurrency)));
+                    lore.add("");
+                    lore.add(ChatColor.YELLOW + "Click to purchase!");
+                }
+            } else if (shopItem.getName().equals("Upgrade Axe")) {
+                ToolUpgradeInfo upgradeInfo = getNextToolUpgradeInfo(player, "AXE");
+                displayName = upgradeInfo.isMaxTier ? ChatColor.GREEN + upgradeInfo.displayName : ChatColor.YELLOW + "Upgrade to " + upgradeInfo.displayName;
+                if(upgradeInfo.isMaxTier) {
+                     displayMaterial = Material.DIAMOND_AXE; // Show diamond axe if maxed
+                } else {
+                    // Icon should be what they are buying, or wooden if buying the first one (nextTierMaterial will be WOODEN_AXE in that case)
+                    displayMaterial = upgradeInfo.nextTierMaterial; 
+                }
+
+                lore.add(ChatColor.GRAY + shopItem.getDescription());
+                lore.add("");
+                if (upgradeInfo.isMaxTier) {
+                    lore.add(ChatColor.GREEN + "Max Tier Reached!");
+                    purchaseDisabled = true;
+                } else {
+                    displayCost = upgradeInfo.cost;
+                    displayCurrency = upgradeInfo.currency;
+                    lore.add(ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + displayCost + " " + MessageUtils.colorize(getCurrencyName(displayCurrency)));
+                    lore.add("");
+                    lore.add(ChatColor.YELLOW + "Click to purchase!");
+                }
+            } else {
+                // Standard item display
+                displayName = ChatColor.WHITE + shopItem.getName();
+                lore.add(ChatColor.GRAY + shopItem.getDescription());
+                lore.add("");
+                if (shopItem.isFree()) {
+                    lore.add(ChatColor.GREEN + "FREE");
+                } else {
+                    lore.add(ChatColor.WHITE + "Cost: " + ChatColor.YELLOW + displayCost + " " + MessageUtils.colorize(getCurrencyName(displayCurrency)));
+                }
+                lore.add("");
+                lore.add(ChatColor.YELLOW + "Click to purchase!");
             }
-            
-            lore.add("");
-            lore.add(ChatColor.YELLOW + "Click to purchase!");
-              meta.setLore(lore);
+
+            item.setType(displayMaterial); // Update material for icon
+            meta.setDisplayName(displayName);
+            meta.setLore(lore);
             meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-            // Add potion flag if it exists in this version
-            try {
-                meta.addItemFlags(ItemFlag.valueOf("HIDE_POTION_EFFECTS"));
-            } catch (IllegalArgumentException ignored) {
-                // Flag doesn't exist in this version, just continue
+            if (purchaseDisabled) { // Simplified condition: upgradeInfo.isMaxTier is implied if purchaseDisabled is true for these items
+                 // meta.addEnchant(org.bukkit.enchantments.Enchantment.LUCK, 1, false); // Removed LUCK enchantment
+                 // meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+                 // Consider other ways to make it look disabled if needed, e.g. different colored name part
             }
             item.setItemMeta(meta);
         }
-        
         return item;
     }
     
@@ -326,10 +389,89 @@ public class ShopManager {
      * @param player The player
      * @param item The item being purchased
      */    private void processPurchase(Player player, ShopItem item) {
-        // Check if this is an ultimate class selection
         if (item instanceof UltimateShopItem) {
             UltimateShopItem ultimateItem = (UltimateShopItem) item;
             UltimateClassHandler.handleUltimateSelection(player, ultimateItem, plugin);
+            return;
+        }
+        
+        // --- New Armor Check --- 
+        if (isArmor(item.getMaterial())) {
+            int purchaseTier = getArmorTierLevel(item.getMaterial());
+            int playerTier = getPlayerArmorTier(player);
+            if (purchaseTier <= playerTier) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou already have this tier of armor or better!");
+                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f); // Use a 'fail' sound
+                return; // Cancel purchase
+            }
+        }
+        // --- End New Armor Check ---
+
+        String itemName = item.getName();
+        if (itemName.equals("Upgrade Pickaxe") || itemName.equals("Upgrade Axe")) {
+            String toolType = itemName.equals("Upgrade Pickaxe") ? "PICKAXE" : "AXE";
+            ToolUpgradeInfo upgradeInfo = getNextToolUpgradeInfo(player, toolType);
+
+            if (upgradeInfo.isMaxTier) {
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou already have the max tier " + toolType.toLowerCase() + "!");
+                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+                return;
+            }
+
+            Material currentToolMat = null;
+            if (upgradeInfo.nextTierMaterial == Material.STONE_PICKAXE) currentToolMat = Material.WOODEN_PICKAXE;
+            else if (upgradeInfo.nextTierMaterial == Material.IRON_PICKAXE) currentToolMat = Material.STONE_PICKAXE;
+            else if (upgradeInfo.nextTierMaterial == Material.DIAMOND_PICKAXE) currentToolMat = Material.IRON_PICKAXE;
+            else if (upgradeInfo.nextTierMaterial == Material.WOODEN_PICKAXE) currentToolMat = null; // Buying the first one
+
+            if (upgradeInfo.nextTierMaterial == Material.STONE_AXE) currentToolMat = Material.WOODEN_AXE;
+            else if (upgradeInfo.nextTierMaterial == Material.IRON_AXE) currentToolMat = Material.STONE_AXE;
+            else if (upgradeInfo.nextTierMaterial == Material.DIAMOND_AXE) currentToolMat = Material.IRON_AXE;
+            else if (upgradeInfo.nextTierMaterial == Material.WOODEN_AXE) currentToolMat = null; // Buying the first one
+            
+            // Check if player has the prerequisite tool (if not buying the first wooden one)
+            boolean hasPrerequisite = false;
+            if (currentToolMat != null) {
+                for (ItemStack invItem : player.getInventory().getContents()) {
+                    if (invItem != null && invItem.getType() == currentToolMat) {
+                        hasPrerequisite = true;
+                        break;
+                    }
+                }
+            } else {
+                hasPrerequisite = true; // No prerequisite needed if buying the first wooden tool
+            }
+
+            if (!hasPrerequisite) {
+                // This case should ideally be handled by getNextToolUpgradeInfo returning the wooden tool info if player has nothing.
+                // If currentToolMat is not null, it means they are upgrading from an existing tool.
+                MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou need a " + (currentToolMat != null ? currentToolMat.name().toLowerCase().replace("_", " ") : "base tool") + " to upgrade!");
+                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 0.5f);
+                return;
+            }
+            
+            removeCurrency(player, upgradeInfo.currency, upgradeInfo.cost);
+            if (currentToolMat != null) {
+                player.getInventory().remove(currentToolMat);
+            }
+
+            ItemStack newTool = new ItemStack(upgradeInfo.nextTierMaterial, 1);
+            ItemMeta meta = newTool.getItemMeta();
+            if (meta != null) {
+                meta.setDisplayName(ChatColor.WHITE + upgradeInfo.displayName);
+                meta.setUnbreakable(true);
+                meta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+                List<String> lore = new ArrayList<>();
+                lore.add(ChatColor.GRAY + toolType + " - Keep on Death (may downgrade)");
+                meta.setLore(lore);
+                newTool.setItemMeta(meta);
+            }
+            player.getInventory().addItem(newTool);
+
+            MessageUtils.sendMessage(player, plugin.getPrefix() + "&aPurchased &e" + upgradeInfo.displayName + "&a!");
+            player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+            playPurchaseAnimation(player, item);
+            openCategoryMenu(player, playerCategory.getOrDefault(player.getUniqueId(), ShopCategory.QUICK_BUY));
             return;
         }
         
@@ -341,14 +483,17 @@ public class ShopManager {
             return;
         }
         
-        // Special handling for sword upgrades - remove existing swords
-        if (item.getMaterial().name().contains("SWORD")) {
+        // Special handling for sword upgrades - remove existing swords (if not upgradable swords)
+        // If swords become upgradable, this logic needs to adapt like pickaxes/axes.
+        if (item.getMaterial().name().contains("SWORD") && !item.getName().contains("Upgrade")) { // Assuming no "Sword Upgrade" items for now
             removeExistingSwords(player);
         }
-        
-        // Handle permanent tool upgrades - don't let players buy the same tool twice
-        if (!handlePermanentToolUpgrades(player, item)) {
-            return;
+
+        // Handle permanent tool upgrades - don't let players buy the same tool twice (for non-upgradable tools like Shears)
+        if (!item.getName().contains("Upgrade")) { // Only apply to non-upgrade items
+            if (!handlePermanentToolUpgrades(player, item)) {
+                 return;
+            }
         }
           // Remove the currency
         removeCurrency(player, item.getCurrency(), item.getCost());
@@ -387,7 +532,7 @@ public class ShopManager {
         
         // Confirmation message and sound
         MessageUtils.sendMessage(player, plugin.getPrefix() + "&aYou purchased &e" + item.getName() + "&a!");
-        player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+        player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
         
         // Play purchase animation
         playPurchaseAnimation(player, item);
@@ -432,9 +577,9 @@ public class ShopManager {
      */    private void customizeShopItem(ItemStack itemStack, ShopItem shopItem) {
         ItemMeta meta = itemStack.getItemMeta();
         if (meta != null) {
-            // Set custom name if needed
-            if (shopItem.getName() != null && !shopItem.getName().isEmpty()) {
-                meta.setDisplayName(ChatColor.WHITE + shopItem.getName());
+            // Set custom name if needed (already done for direct purchases, but good for consistency)
+            if (shopItem.getName() != null && !shopItem.getName().isEmpty() && !meta.hasDisplayName()) {
+                 meta.setDisplayName(ChatColor.WHITE + shopItem.getName());
             }
             
             // Special enchantments based on item name
@@ -448,6 +593,37 @@ public class ShopManager {
             if (shopItem.getName().contains("Punch")) {
                 meta.addEnchant(org.bukkit.enchantments.Enchantment.PUNCH, 1, true);
             }
+
+            // Handle Potion Effects for Potion Items
+            if (itemStack.getType() == Material.POTION) {
+                if (meta instanceof org.bukkit.inventory.meta.PotionMeta potionMeta) {
+                    boolean effectSet = false;
+                    if (shopItem.getName().equalsIgnoreCase("Speed Potion")) {
+                        potionMeta.addCustomEffect(new org.bukkit.potion.PotionEffect(org.bukkit.potion.PotionEffectType.SPEED, 45 * 20, 1), true); // Speed II for 45s
+                        potionMeta.setColor(org.bukkit.Color.fromRGB(125, 184, 241)); // Light blue
+                        // We'll rely on the general meta.setDisplayName later if needed, or set it here if specific.
+                        // For now, let PotionMeta handle its default display or let lore describe it.
+                        // Or, if we want to override the default potion name:
+                        potionMeta.setDisplayName(ChatColor.AQUA + "Speed Potion II");
+                        effectSet = true;
+                    } else if (shopItem.getName().equalsIgnoreCase("Jump Potion")) {
+                        potionMeta.addCustomEffect(new org.bukkit.potion.PotionEffect(org.bukkit.potion.PotionEffectType.JUMP_BOOST, 45 * 20, 4), true); // Jump V for 45s
+                        potionMeta.setColor(org.bukkit.Color.LIME); // Lime green
+                        potionMeta.setDisplayName(ChatColor.GREEN + "Jump Potion V");
+                        effectSet = true;
+                    } else if (shopItem.getName().equalsIgnoreCase("Invisibility")) {
+                        potionMeta.addCustomEffect(new org.bukkit.potion.PotionEffect(org.bukkit.potion.PotionEffectType.INVISIBILITY, 30 * 20, 0), true); // Invisibility for 30s
+                        potionMeta.setColor(org.bukkit.Color.GRAY); // Gray
+                        potionMeta.setDisplayName(ChatColor.GRAY + "Invisibility Potion");
+                        effectSet = true;
+                    }
+
+                    if (effectSet) {
+                        // Add flag to hide the default "No Effects" or redundant effect list if using custom name
+                        // potionMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_POTION_EFFECTS); // Removed as per user feedback - flag may not exist in this API version
+                    }
+                }
+            }
             
             // Make tools and weapons unbreakable
             Material type = itemStack.getType();
@@ -458,6 +634,7 @@ public class ShopManager {
                 type == Material.SHEARS ||
                 type == Material.BOW ||
                 type == Material.CROSSBOW ||
+                type == Material.SHIELD ||
                 type == Material.FISHING_ROD) {
                 
                 meta.setUnbreakable(true);
@@ -764,5 +941,64 @@ public class ShopManager {
         
         // Open the menu
         player.openInventory(upgradeMenu);
+    }
+
+    private ToolUpgradeInfo getNextToolUpgradeInfo(Player player, String toolType /* "PICKAXE" or "AXE" */) {
+        Material currentMaterial = null;
+        ItemStack[] inventory = player.getInventory().getContents();
+        for (ItemStack item : inventory) {
+            if (item != null && item.getType().name().contains(toolType)) {
+                // Prioritize higher tier tools if multiple exist (e.g. a wooden and stone)
+                if (currentMaterial == null || getTierLevel(item.getType()) > getTierLevel(currentMaterial)) {
+                    currentMaterial = item.getType();
+                }
+            }
+        }
+
+        // Default to needing the first tier if no tool is found
+        if (currentMaterial == null) {
+            if (toolType.equals("PICKAXE")) return new ToolUpgradeInfo(Material.WOODEN_PICKAXE, Material.IRON_INGOT, 5, "Wooden Pickaxe", false); // Cost for base wooden pickaxe
+            if (toolType.equals("AXE")) return new ToolUpgradeInfo(Material.WOODEN_AXE, Material.IRON_INGOT, 5, "Wooden Axe", false); // Cost for base wooden axe
+             return new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true); // Should not happen
+        }
+
+        if (toolType.equals("PICKAXE")) {
+            if (currentMaterial == Material.WOODEN_PICKAXE) return new ToolUpgradeInfo(Material.STONE_PICKAXE, Material.IRON_INGOT, 10, "Stone Pickaxe", false);
+            if (currentMaterial == Material.STONE_PICKAXE) return new ToolUpgradeInfo(Material.IRON_PICKAXE, Material.IRON_INGOT, 25, "Iron Pickaxe", false);
+            if (currentMaterial == Material.IRON_PICKAXE) return new ToolUpgradeInfo(Material.DIAMOND_PICKAXE, Material.GOLD_INGOT, 5, "Diamond Pickaxe", false);
+            if (currentMaterial == Material.DIAMOND_PICKAXE) return new ToolUpgradeInfo(Material.DIAMOND_PICKAXE, Material.AIR, 0, "Max Tier Pickaxe", true);
+        } else if (toolType.equals("AXE")) {
+            if (currentMaterial == Material.WOODEN_AXE) return new ToolUpgradeInfo(Material.STONE_AXE, Material.IRON_INGOT, 10, "Stone Axe", false);
+            if (currentMaterial == Material.STONE_AXE) return new ToolUpgradeInfo(Material.IRON_AXE, Material.IRON_INGOT, 25, "Iron Axe", false);
+            if (currentMaterial == Material.IRON_AXE) return new ToolUpgradeInfo(Material.DIAMOND_AXE, Material.GOLD_INGOT, 5, "Diamond Axe", false);
+            if (currentMaterial == Material.DIAMOND_AXE) return new ToolUpgradeInfo(Material.DIAMOND_AXE, Material.AIR, 0, "Max Tier Axe", true);
+        }
+        return new ToolUpgradeInfo(Material.BARRIER, Material.AIR, 0, "Error", true); // Should indicate error or unknown state
+    }
+
+    private int getTierLevel(Material material) {
+        if (material.name().contains("WOODEN")) return 1;
+        if (material.name().contains("STONE")) return 2;
+        if (material.name().contains("IRON")) return 3;
+        if (material.name().contains("DIAMOND")) return 4;
+        return 0; // Default for non-tiered or unknown
+    }
+
+    private int getArmorTierLevel(Material material) {
+        if (material == null) return 0;
+        String name = material.name();
+        if (name.startsWith("LEATHER_")) return 1; // Team armor base
+        if (name.startsWith("CHAINMAIL_")) return 2;
+        if (name.startsWith("IRON_")) return 3;
+        if (name.startsWith("DIAMOND_")) return 4;
+        return 0; // Not armor or unknown
+    }
+
+    private int getPlayerArmorTier(Player player) {
+        int maxTier = 0;
+        for (ItemStack armorPiece : player.getInventory().getArmorContents()) {
+            maxTier = Math.max(maxTier, getArmorTierLevel(armorPiece != null ? armorPiece.getType() : null));
+        }
+        return maxTier;
     }
 }

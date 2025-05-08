@@ -13,6 +13,16 @@ import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import java.util.UUID;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.Block;
+import org.bukkit.util.Vector;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.inventory.ItemStack;
+import org.bcnlab.beaconLabsBW.arena.model.TeamData;
+import org.bukkit.event.entity.ExplosionPrimeEvent;
+import org.bukkit.entity.TNTPrimed;
 
 /**
  * Handles entity-related events for BedWars
@@ -262,11 +272,100 @@ public class EntityListener implements Listener {
         
         if (projectile.getShooter() instanceof Player player) {
             Game game = plugin.getGameManager().getPlayerGame(player);
-              // Handle special projectiles like bridge eggs
+            
+            // Handle Bridge Egg logic (existing)
             if (game != null && game.getState() == GameState.RUNNING && projectile instanceof Egg) {
-                // Bridge egg implementation - track it to create a bridge when it lands
-                projectile.setMetadata("bridge_egg", new FixedMetadataValue(plugin, true));
+                if (projectile.hasMetadata("bridge_egg")) { 
+                    // Get the location where the egg landed
+                    Location impactLocation = projectile.getLocation();
+                    World world = impactLocation.getWorld();
+                    String playerTeamName = game.getPlayerTeam(player);
+
+                    if (playerTeamName == null) return; // Player not on a team
+
+                    TeamData teamData = game.getArena().getTeam(playerTeamName);
+                    if (teamData == null) return;
+
+                    Material bridgeMaterial = game.getTeamWoolMaterial(teamData.getColor());
+
+                    // Determine bridge direction (based on player's facing direction when thrown)
+                    // For simplicity, we'll use the egg's velocity direction when it hits.
+                    // A more accurate way would be to store player's direction when the egg was thrown.
+                    Vector direction = player.getLocation().getDirection().setY(0).normalize(); // Horizontal direction player is facing
+
+                    BlockFace bridgeDirection = getBlockFaceFromVector(direction);
+                    if (bridgeDirection == null) {
+                        bridgeDirection = BlockFace.NORTH; // Default direction
+                    }
+
+                    final BlockFace finalBridgeDirection = bridgeDirection;
+                    new BukkitRunnable() {
+                        int blocksPlaced = 0;
+                        Location currentBlockLoc = impactLocation.getBlock().getLocation();
+
+                        @Override
+                        public void run() {
+                            if (blocksPlaced >= 15 || game.getState() != GameState.RUNNING) { // Max bridge length 15 blocks
+                                cancel();
+                                return;
+                            }
+
+                            Block blockToPlace = currentBlockLoc.getBlock();
+                            if (blockToPlace.getType() == Material.AIR || blockToPlace.isLiquid()) {
+                                blockToPlace.setType(bridgeMaterial);
+                                game.recordPlacedBlock(blockToPlace); // Track for cleanup
+                                blocksPlaced++;
+                            }
+                            currentBlockLoc.add(finalBridgeDirection.getModX(), finalBridgeDirection.getModY(), finalBridgeDirection.getModZ());
+                        }
+                    }.runTaskTimer(plugin, 0L, 2L); // Place a block every 2 ticks
+
+                    // Remove the metadata so it doesn't trigger again if something else interacts with the egg entity
+                    projectile.removeMetadata("bridge_egg", plugin);
+                } else {
+                    ItemStack itemInHand = player.getInventory().getItemInMainHand();
+                    if (itemInHand.getType() == Material.EGG && itemInHand.hasItemMeta() && itemInHand.getItemMeta().hasDisplayName() && itemInHand.getItemMeta().getDisplayName().toLowerCase().contains("bridge egg")) {
+                        projectile.setMetadata("bridge_egg", new FixedMetadataValue(plugin, true));
+                    }
+                }
             }
+            // --- New Fireball Impact Logic ---
+            else if (game != null && game.getState() == GameState.RUNNING && projectile instanceof Fireball) {
+                if (projectile.hasMetadata("bw_fireball")) {
+                    // Our custom fireball hit something
+                    Location impactLocation = projectile.getLocation();
+                    World world = impactLocation.getWorld();
+                    
+                    // Create explosion
+                    // We use createExplosion which gives more control and avoids cancelling the event itself
+                    // Power 2.0F was set on launch, this affects radius and entity damage
+                    // Set fire to false to prevent widespread fire
+                    // Set block break to false initially
+                    world.createExplosion(impactLocation, 2.0F, false, false); 
+
+                    // Optional: Manually break only specific vulnerable blocks (like wool) if desired
+                    // For now, the explosion damages entities but doesn't break blocks.
+
+                    // Remove the fireball entity
+                    projectile.remove();
+                    
+                    // Remove metadata to prevent double handling (though remove() should be enough)
+                    projectile.removeMetadata("bw_fireball", plugin);
+                }
+            }
+            // --- End Fireball Impact Logic ---
+        }
+    }
+    
+    // Helper method to convert vector to BlockFace (simplified)
+    private BlockFace getBlockFaceFromVector(Vector vector) {
+        double x = vector.getX();
+        double z = vector.getZ();
+
+        if (Math.abs(x) > Math.abs(z)) {
+            return (x > 0) ? BlockFace.EAST : BlockFace.WEST;
+        } else {
+            return (z > 0) ? BlockFace.SOUTH : BlockFace.NORTH;
         }
     }
     

@@ -35,6 +35,8 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.metadata.FixedMetadataValue;
+import org.bukkit.entity.Fireball;
+import org.bukkit.Sound;
 
 /**
  * Handles player-related events for BedWars
@@ -146,9 +148,11 @@ public class PlayerListener implements Listener {
     public void onPlayerInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         Block block = event.getClickedBlock();
+        Action action = event.getAction();
+        ItemStack item = event.getItem();
           // Check for right-clicking or left-clicking beds 
         if (block != null && 
-            (event.getAction() == Action.RIGHT_CLICK_BLOCK || event.getAction() == Action.LEFT_CLICK_BLOCK) && 
+            (action == Action.RIGHT_CLICK_BLOCK || action == Action.LEFT_CLICK_BLOCK) && 
             block.getType().name().contains("BED")) {
             
             // Check if the player is in a game
@@ -165,7 +169,7 @@ public class PlayerListener implements Listener {
                     event.setCancelled(true);
                     
                     // Try to repair the bed if it's causing issues
-                    if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+                    if (action == Action.RIGHT_CLICK_BLOCK) {
                         game.resetBedAtLocation(block.getLocation());
                     }
                 }
@@ -176,10 +180,9 @@ public class PlayerListener implements Listener {
         }
         
         // Handle Dream Defender (Iron Golem) spawn
-        if ((event.getAction() == Action.RIGHT_CLICK_BLOCK || event.getAction() == Action.RIGHT_CLICK_AIR) && 
+        if ((action == Action.RIGHT_CLICK_BLOCK || action == Action.RIGHT_CLICK_AIR) && 
             event.getHand() == EquipmentSlot.HAND) {
             
-            ItemStack item = event.getItem();
             if (item != null && item.getType() == Material.VILLAGER_SPAWN_EGG) {
                 // Check if the item is a Dream Defender
                 ItemMeta meta = item.getItemMeta();
@@ -256,9 +259,37 @@ public class PlayerListener implements Listener {
             }
         }
         
+        // Handle Fireball Throw
+        if (item != null && item.getType() == Material.FIRE_CHARGE && 
+            (action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK)) {
+            
+            // Check if it's the specific shop item (optional, could check lore/name)
+            if (item.hasItemMeta() && item.getItemMeta().hasDisplayName() && item.getItemMeta().getDisplayName().contains("Fireball")) {
+                Game game = plugin.getGameManager().getPlayerGame(player);
+                if (game != null && game.getState() == GameState.RUNNING) {
+                    event.setCancelled(true); // Prevent default Fire Charge behavior
+
+                    // Consume item
+                    if (item.getAmount() > 1) {
+                        item.setAmount(item.getAmount() - 1);
+                    } else {
+                        player.getInventory().setItemInMainHand(null);
+                    }
+
+                    // Launch Fireball
+                    Fireball fireball = player.launchProjectile(Fireball.class);
+                    fireball.setShooter(player); // Set shooter for tracking/damage attribution
+                    fireball.setIsIncendiary(false); // Prevent it from starting fires randomly
+                    fireball.setYield(2.0F); // Explosion power (TNT is 4.0F)
+                    // Store metadata to identify it later
+                    fireball.setMetadata("bw_fireball", new FixedMetadataValue(plugin, true));
+                    player.playSound(player.getLocation(), Sound.ENTITY_GHAST_SHOOT, 1.0f, 1.0f);
+                }
+            }
+        }
+        
         // Handle shop keeper interaction
-        if (event.getAction() == Action.RIGHT_CLICK_BLOCK || event.getAction() == Action.RIGHT_CLICK_AIR) {
-            ItemStack item = event.getItem();
+        if (action == Action.RIGHT_CLICK_BLOCK || action == Action.RIGHT_CLICK_AIR) {
             if (item != null && item.getType() == Material.EMERALD) {
                 // Check if player is in a game
                 Game game = plugin.getGameManager().getPlayerGame(player);
