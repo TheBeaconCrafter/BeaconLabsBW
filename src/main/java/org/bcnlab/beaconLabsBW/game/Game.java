@@ -1116,39 +1116,59 @@ public class Game {
      * Display game stats to all players
      */
     private void displayGameStats() {
-        broadcastMessage("&6&l==== GAME STATS ====");
-        
-        // Find the top killer
-        UUID topKiller = null;
-        int topKills = -1;
-        
-        for (Map.Entry<UUID, Integer> entry : playerKills.entrySet()) {
-            if (entry.getValue() > topKills) {
-                topKills = entry.getValue();
-                topKiller = entry.getKey();
+        broadcastMessage("&6&l&m-------------------------------------");
+        broadcastMessage("                     &6&lGAME STATS");
+        broadcastMessage(""); // Spacer
+
+        // Combine all players who participated (based on kills, deaths, or bed breaks)
+        Set<UUID> participants = new HashSet<>();
+        participants.addAll(playerKills.keySet());
+        participants.addAll(playerDeaths.keySet());
+        participants.addAll(playerBedBreaks.keySet());
+
+        if (participants.isEmpty()) {
+            broadcastMessage("&7No player statistics available for this game.");
+        } else {
+            List<UUID> sortedParticipants = new ArrayList<>(participants);
+            // Optional: Sort players by kills or another metric
+            sortedParticipants.sort((p1, p2) -> Integer.compare(playerKills.getOrDefault(p2, 0), playerKills.getOrDefault(p1, 0))); // Sort descending by kills
+
+            broadcastMessage("            &ePlayer            &aKills &cDeaths  &bK/D  &dBeds");
+            broadcastMessage("&7&m-------------------------------------");
+
+            for (UUID playerId : sortedParticipants) {
+                Player player = Bukkit.getPlayer(playerId);
+                String playerName = player != null ? player.getName() : ("Offline(" + playerId.toString().substring(0, 6) + ")");
+                
+                // Ensure player name fits in alignment (adjust padding as needed)
+                playerName = String.format("%-18s", playerName); // Left-align, pad to 18 chars
+
+                int kills = playerKills.getOrDefault(playerId, 0);
+                int deaths = playerDeaths.getOrDefault(playerId, 0);
+                int bedBreaks = playerBedBreaks.getOrDefault(playerId, 0);
+
+                // Calculate K/D Ratio
+                double kdr;
+                if (deaths == 0) {
+                    kdr = kills; // Treat as KDR = Kills if deaths are 0
+                } else {
+                    kdr = (double) kills / deaths;
+                }
+                String kdrFormatted = String.format("%.2f", kdr);
+
+                // Format stats line
+                String statsLine = String.format("&e%s &7- &a%3d   &c%3d   &b%5s  &d%3d", 
+                                               playerName, 
+                                               kills, 
+                                               deaths, 
+                                               kdrFormatted, 
+                                               bedBreaks);
+                broadcastMessage(statsLine);
             }
         }
-        
-        if (topKiller != null) {
-            Player killer = Bukkit.getPlayer(topKiller);
-            String killerName = killer != null ? killer.getName() : "Unknown";
-            broadcastMessage("&eTop Killer: &c" + killerName + " &ewith &c" + topKills + " &ekills!");
-        }
-        
-        // Display bed breaks
-        if (!playerBedBreaks.isEmpty()) {
-            StringBuilder bedBreakers = new StringBuilder();
-            playerBedBreaks.forEach((id, count) -> {
-                Player breaker = Bukkit.getPlayer(id);
-                if (breaker != null) {
-                    if (bedBreakers.length() > 0) bedBreakers.append(", ");
-                    bedBreakers.append("&a").append(breaker.getName()).append(" &7(").append(count).append(")");
-                }
-            });
-            broadcastMessage("&eBed Breakers: " + bedBreakers);
-        }
-        
-        broadcastMessage("&6&l================");
+
+        broadcastMessage(""); // Spacer
+        broadcastMessage("&6&l&m-------------------------------------");
     }
     
     /**
@@ -1854,6 +1874,17 @@ public class Game {
             setPlayerUltimateClass(player.getUniqueId(), playerClass);
             MessageUtils.sendMessage(player, "&eYou have been randomly assigned the " + playerClass.getFormattedName() + " &eclass!");
         }
+
+        // If player is Swordsman, remove any existing wooden swords first
+        if (playerClass == UltimateClass.SWORDSMAN) {
+            for (int i = 0; i < player.getInventory().getSize(); i++) {
+                ItemStack item = player.getInventory().getItem(i);
+                if (item != null && item.getType() == Material.WOODEN_SWORD) {
+                    player.getInventory().clear(i);
+                }
+            }
+        }
+
           // Create the ultimate ability item and give it to the player
         // First clear any existing ultimate items
         for (ItemStack item : player.getInventory().getContents()) {

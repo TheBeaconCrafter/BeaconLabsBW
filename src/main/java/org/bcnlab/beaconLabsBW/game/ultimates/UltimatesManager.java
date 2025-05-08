@@ -24,6 +24,8 @@ import org.bukkit.util.Vector;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.bcnlab.beaconLabsBW.game.Game;
+
 /**
  * Manages ultimate abilities for BedWars Ultimates mode
  */
@@ -157,8 +159,7 @@ public class UltimatesManager implements Listener {
         } else {
             // If a teleport-back was performed, we don't need to show the cooldown
             // as the teleport-back option has been consumed
-            player.setExp(0.0f);
-            player.setLevel(0);
+            clearCooldownDisplay(player);
         }
     }
 
@@ -336,11 +337,14 @@ public class UltimatesManager implements Listener {
         int DEMOLITION_CHARGE_COOLDOWN = 15; // 15 seconds
         abilityCooldowns.put(playerId, System.currentTimeMillis() + (DEMOLITION_CHARGE_COOLDOWN * 1000));
         
-        // Find targeted block
         Block targetBlock = player.getTargetBlock(null, 5);
+        Game game = plugin.getGameManager().getPlayerGame(player); // Get game instance
+        if (game == null) return; // Need game instance for checks
+
         if (targetBlock != null && targetBlock.getType().toString().contains("WOOL")) {
-            // Start fire chain reaction
-            burnConnectedWool(targetBlock, new HashSet<>());
+            Set<Block> fireBlocksCreated = new HashSet<>(); // Track fire blocks from this activation
+            // Start fire chain reaction, passing the game instance and the tracking set
+            burnConnectedWool(game, targetBlock, new HashSet<>(), fireBlocksCreated);
             
             // Set XP bar for cooldown
             startCooldownDisplay(player, DEMOLITION_CHARGE_COOLDOWN);
@@ -351,6 +355,16 @@ public class UltimatesManager implements Listener {
                                         20, 0.5, 0.5, 0.5, 0.05);
             player.getWorld().spawnParticle(Particle.LARGE_SMOKE, targetBlock.getLocation().add(0.5, 0.5, 0.5),
                                         15, 0.3, 0.3, 0.3, 0.01);
+
+            // Schedule a task to remove all tracked fire blocks after 10 seconds
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                for (Block fireBlock : fireBlocksCreated) {
+                    if (fireBlock.getType() == Material.FIRE) {
+                        fireBlock.setType(Material.AIR);
+                    }
+                }
+            }, 200L); // 10 seconds
+
         } else {
             player.sendMessage(ChatColor.DARK_RED + "Must target wool blocks!");
             // Refund cooldown
@@ -360,30 +374,36 @@ public class UltimatesManager implements Listener {
     
     /**
      * Burns connected wool blocks recursively
+     * Only burns wool placed by players during the game.
      */
-    private void burnConnectedWool(Block block, Set<Block> processed) {
-        // Check if block is wool and not already processed
-        if (block != null && block.getType().toString().contains("WOOL") && !processed.contains(block)) {
+    private void burnConnectedWool(Game game, Block block, Set<Block> processed, Set<Block> fireBlocksCreated) {
+        // Check if block is wool, placed by a player, and not already processed
+        if (block != null && block.getType().toString().contains("WOOL") && 
+            game.isPlacedBlock(block) && // Added check for player-placed block
+            !processed.contains(block)) {
+            
             processed.add(block);
             
-            // Set block on fire
             Block above = block.getRelative(BlockFace.UP);
             if (above.getType().isAir()) {
                 above.setType(Material.FIRE);
+                fireBlocksCreated.add(above); // Add to tracking set
             }
             
             // Schedule block to burn away
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                block.setType(Material.AIR);
+                 if (block.getType().toString().contains("WOOL")) { // Re-check type before setting to air
+                     block.setType(Material.AIR);
+                 }
             }, 20L); // 1 second delay
             
-            // Check adjacent blocks (limit recursion depth to avoid lag)
-            if (processed.size() < 50) {
+            // Check adjacent blocks
+            if (processed.size() < 50) { // Limit recursion depth
                 Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.EAST, 
                                                          BlockFace.SOUTH, BlockFace.WEST,
                                                          BlockFace.UP, BlockFace.DOWN}) {
-                        burnConnectedWool(block.getRelative(face), processed);
+                        burnConnectedWool(game, block.getRelative(face), processed, fireBlocksCreated); // Pass tracking set
                     }
                 }, 5L);
             }
@@ -723,33 +743,31 @@ public class UltimatesManager implements Listener {
             private int secondsLeft = cooldownSeconds;
             
             @Override
-            public void run() {                if (secondsLeft <= 0) {
+            public void run() {
+                if (secondsLeft <= 0) {
                     player.setExp(0.0f);
                     player.setLevel(0);
-                    cooldownTasks.remove(playerId);
-                    
-                    // Play a subtle ready sound once (reduced volume)
                     player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.2f);
-                    
-                    // Cancel this task
-                    BukkitTask task = cooldownTasks.get(playerId);
-                    if (task != null) {
-                        task.cancel();
-                        cooldownTasks.remove(playerId);
+
+                    // Properly cancel this task
+                    BukkitTask self = cooldownTasks.get(playerId);
+                    if (self != null) {
+                        self.cancel();
                     }
+                    cooldownTasks.remove(playerId);
                     return;
                 }
                 
                 secondsLeft--;
-                player.setLevel(secondsLeft);
-                
-                // Smooth transition for XP bar - maintain value between updates to prevent flickering
-                float newExpValue = (float) secondsLeft / cooldownSeconds;
-                
-                // Only update the exp bar if this is actually a decrease
-                if (newExpValue < player.getExp()) {
-                    player.setExp(newExpValue);
+                // Only update the displayed level (and make sound) if 5 seconds or less remain.
+                // The initial level is set when the cooldown starts.
+                if (secondsLeft <= 5) {
+                    player.setLevel(secondsLeft);
                 }
+                
+                // XP bar still updates every second for smoothness
+                float newExpValue = (float) secondsLeft / cooldownSeconds;
+                player.setExp(newExpValue);
             }
         }, 20L, 20L);
         
