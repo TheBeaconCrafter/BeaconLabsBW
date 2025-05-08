@@ -332,12 +332,20 @@ public class GameScoreboard {
                 }
                 
                 // Also cleanup health display
-                 Objective healthObj = mainScoreboard.getObjective("bwhealth");
+                 Objective healthObj = mainScoreboard.getObjective("bw_hp");
                 if (healthObj != null) {
                     try {
                         healthObj.unregister();
                     } catch (Exception e) {
-                         plugin.getLogger().warning("Unexpected error unregistering health objective: " + e.getMessage());
+                         plugin.getLogger().warning("Unexpected error unregistering health objective 'bw_hp': " + e.getMessage());
+                    }
+                }
+                Objective healthObjOld = mainScoreboard.getObjective("bwhealth");
+                 if (healthObjOld != null) {
+                    try {
+                        healthObjOld.unregister();
+                    } catch (Exception e) {
+                         plugin.getLogger().warning("Unexpected error unregistering health objective 'bwhealth': " + e.getMessage());
                     }
                 }
             } else {
@@ -366,24 +374,26 @@ public class GameScoreboard {
         }
         
         try {
-            // Use main scoreboard for the health display since it's visible to all players
             Scoreboard mainBoard = manager.getMainScoreboard();
             
-            // First clean up any existing health objective to avoid conflicts
+            // Clean up old objectives if they exist
             Objective existingObj = mainBoard.getObjective("bwhealth");
             if (existingObj != null) {
-                plugin.getLogger().info("[GameScoreboard] Removing existing health objective.");
+                plugin.getLogger().info("[GameScoreboard] Removing existing health objective 'bwhealth'.");
                 existingObj.unregister();
             }
+            Objective existingObjNew = mainBoard.getObjective("bw_hp");
+            if (existingObjNew != null) {
+                plugin.getLogger().info("[GameScoreboard] Removing existing health objective 'bw_hp'.");
+                existingObjNew.unregister();
+            }
             
-            // Create a new health objective that will automatically track players' health
-            plugin.getLogger().info("[GameScoreboard] Registering new health objective 'bwhealth'.");
-            Objective healthObj = mainBoard.registerNewObjective("bwhealth", Criteria.HEALTH, ChatColor.RED + "❤");
+            // Create objective with new name
+            plugin.getLogger().info("[GameScoreboard] Registering new health objective 'bw_hp'.");
+            Objective healthObj = mainBoard.registerNewObjective("bw_hp", Criteria.HEALTH, "Health");
             healthObj.setDisplaySlot(DisplaySlot.BELOW_NAME);
-            plugin.getLogger().info("[GameScoreboard] Health objective registered and set to BELOW_NAME.");
+            plugin.getLogger().info("[GameScoreboard] Health objective 'bw_hp' registered and set to BELOW_NAME.");
             
-            // When using Criteria.HEALTH, Minecraft will automatically manage the scores based on player health
-            // No need to manually set or update any scores
         } catch (Exception e) {
             plugin.getLogger().warning("[GameScoreboard] Error setting up health displays: " + e.getMessage());
             e.printStackTrace();
@@ -398,9 +408,13 @@ public class GameScoreboard {
             if (manager == null) return;
             
             Scoreboard mainBoard = manager.getMainScoreboard();
-            Objective healthObj = mainBoard.getObjective("bwhealth");
+            Objective healthObj = mainBoard.getObjective("bw_hp");
             if (healthObj != null) {
                 healthObj.unregister();
+            }
+            Objective healthObjOld = mainBoard.getObjective("bwhealth");
+            if (healthObjOld != null) {
+                healthObjOld.unregister();
             }
         } catch (Exception e) {
             // Just log errors but don't crash
@@ -420,7 +434,7 @@ public class GameScoreboard {
             ScoreboardManager manager = Bukkit.getScoreboardManager();
             if (manager != null) {
                 Scoreboard mainBoard = manager.getMainScoreboard();
-                if (mainBoard.getObjective("bwhealth") == null) {
+                if (mainBoard.getObjective("bw_hp") == null) {
                     setupPlayerHealthDisplays();
                 }
             }

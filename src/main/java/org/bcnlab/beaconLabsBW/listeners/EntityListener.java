@@ -23,6 +23,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bcnlab.beaconLabsBW.arena.model.TeamData;
 import org.bukkit.event.entity.ExplosionPrimeEvent;
 import org.bukkit.entity.TNTPrimed;
+import org.bukkit.scheduler.BukkitTask;
 
 /**
  * Handles entity-related events for BedWars
@@ -164,29 +165,18 @@ public class EntityListener implements Listener {
     @EventHandler
     public void onCreatureSpawn(CreatureSpawnEvent event) {
         Entity entity = event.getEntity();
-        
+        CreatureSpawnEvent.SpawnReason reason = event.getSpawnReason();
+
         // Allow only specific spawn reasons in game worlds
         for (Game game : plugin.getGameManager().getActiveGames().values()) {
             if (entity.getWorld().getName().equals(game.getArena().getWorldName())) {
-                // Allow spawning from spawn eggs, custom mechanics, but prevent natural spawning
-                CreatureSpawnEvent.SpawnReason reason = event.getSpawnReason();
+                // Allow CUSTOM (our golem), SPAWNER_EGG, DISPENSE_EGG
                 if (reason != CreatureSpawnEvent.SpawnReason.CUSTOM && 
                     reason != CreatureSpawnEvent.SpawnReason.SPAWNER_EGG && 
                     reason != CreatureSpawnEvent.SpawnReason.DISPENSE_EGG) {
+                    plugin.getLogger().info("[EntityListener] Cancelling creature spawn reason: " + reason + " for entity: " + entity.getType());
                     event.setCancelled(true);
                 }
-                return;
-            }
-        }
-        
-        // Handle spawning iron golem (Dream Defender)
-        if (event.getEntity() instanceof IronGolem golem && event.getSpawnReason() == CreatureSpawnEvent.SpawnReason.CUSTOM) {
-            // Golems are spawned with metadata, so check for it
-            if (golem.hasMetadata("team")) {
-                // Schedule a task to make the golem target enemies
-                Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                    makeGolemTargetEnemies(golem);
-                }, 10L); // Small delay to ensure metadata is properly set
             }
         }
     }
@@ -197,57 +187,72 @@ public class EntityListener implements Listener {
      * @param golem The Iron Golem to update
      */
     private void makeGolemTargetEnemies(IronGolem golem) {
-        // Check if the golem has team metadata
-        if (!golem.hasMetadata("team")) return;
-        
+        if (!golem.hasMetadata("team")) {
+            plugin.getLogger().warning("[DreamDefender AI] Golem missing team metadata, cannot start targeting task.");
+            return;
+        }
         String golemTeam = golem.getMetadata("team").get(0).asString();
+        UUID golemUUID = golem.getUniqueId(); // For logging
+        plugin.getLogger().info("[DreamDefender AI] Starting targeting task for Golem " + golemUUID + " on team " + golemTeam);
         
-        // Get all games to find which one this golem belongs to
         for (Game game : plugin.getGameManager().getActiveGames().values()) {
             if (golem.getWorld().getName().equals(game.getArena().getWorldName())) {
-                
+                // Ensure this game actually contains the golem's owner if possible?
+                // Or just rely on world match, which should be sufficient.
+
                 // Schedule a repeating task to find targets
-                Bukkit.getScheduler().runTaskTimer(plugin, task -> {
-                    // If the golem is dead or removed, cancel task
-                    if (golem.isDead() || !golem.isValid()) {
-                        task.cancel();
-                        return;
-                    }
-                    
-                    // Look for the nearest enemy player if not already targeting someone
-                    if (golem.getTarget() == null) {
-                        Player nearestEnemy = null;
-                        double nearestDistance = 20.0; // Max target range
+                BukkitTask targetingTask = new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        // Check if the golem is still valid
+                        if (!golem.isValid() || golem.isDead()) {
+                            plugin.getLogger().info("[DreamDefender AI] Golem " + golemUUID + " invalid/dead. Cancelling task " + this.getTaskId());
+                            this.cancel(); // Use this.cancel() inside BukkitRunnable
+                            return;
+                        }
                         
-                        // Look for nearby enemy players
+                        LivingEntity currentTarget = golem.getTarget();
+                        if (currentTarget != null && currentTarget.isValid() && !currentTarget.isDead()) {
+                            return; // Already has a valid target
+                        }
+                        
+                        Player nearestEnemy = null;
+                        double nearestDistanceSq = 20.0 * 20.0; // Max target range (squared)
+                        
                         for (UUID playerId : game.getPlayers()) {
                             Player otherPlayer = Bukkit.getPlayer(playerId);
-                            
-                            if (otherPlayer != null && otherPlayer.getWorld().equals(golem.getWorld()) && 
-                                !game.isSpectator(otherPlayer)) {
-                                
-                                String playerTeam = game.getPlayerTeam(otherPlayer);
-                                
-                                // If player is on a different team, consider them as a target
-                                if (playerTeam != null && !playerTeam.equals(golemTeam)) {
-                                    double distance = otherPlayer.getLocation().distance(golem.getLocation());
-                                    if (distance < nearestDistance) {
-                                        nearestEnemy = otherPlayer;
-                                        nearestDistance = distance;
-                                    }
+                            if (otherPlayer == null || !otherPlayer.isOnline() || game.isSpectator(otherPlayer) || !otherPlayer.getWorld().equals(golem.getWorld())) {
+                                continue; 
+                            }
+                            String playerTeam = game.getPlayerTeam(otherPlayer);
+                            if (playerTeam != null && !playerTeam.equals(golemTeam)) {
+                                double distanceSq = otherPlayer.getLocation().distanceSquared(golem.getLocation());
+                                if (distanceSq < nearestDistanceSq) {
+                                    nearestEnemy = otherPlayer;
+                                    nearestDistanceSq = distanceSq;
                                 }
                             }
                         }
                         
-                        // Set the target if we found one
                         if (nearestEnemy != null) {
+                            plugin.getLogger().info("[DreamDefender AI] Task " + this.getTaskId() + " for Golem " + golemUUID + " found target: " + nearestEnemy.getName() + ". Setting target.");
                             golem.setTarget(nearestEnemy);
+                        } else {
+                             if (golem.getTarget() != null) {
+                                 plugin.getLogger().info("[DreamDefender AI] Task " + this.getTaskId() + " for Golem " + golemUUID + " clearing target.");
+                                 golem.setTarget(null);
+                             }
                         }
                     }
-                }, 20L, 20L); // Check every second
+                }.runTaskTimer(plugin, 20L, 20L); // Schedule the runnable
                 
-                // We found the right game, no need to continue
-                break;
+                int taskId = targetingTask.getTaskId();
+
+                // Store the task ID with the golem
+                golem.setMetadata("targeting_task", new FixedMetadataValue(plugin, taskId)); 
+
+                plugin.getLogger().info("[DreamDefender AI] Targeting task scheduled for Golem " + golemUUID + " with task ID: " + taskId);
+                break; // Found the game, stop looping
             }
         }
     }

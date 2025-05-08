@@ -38,6 +38,7 @@ import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.entity.Fireball;
 import org.bukkit.Sound;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.player.PlayerItemDamageEvent;
 
 /**
  * Handles player-related events for BedWars
@@ -671,5 +672,32 @@ public class PlayerListener implements Listener {
         //         MessageUtils.sendMessage(player, plugin.getPrefix() + "&cYou can only break blocks placed by players!");
         //     }
         // }
+    }
+
+    @EventHandler
+    public void onItemDamage(PlayerItemDamageEvent event) {
+        Player player = event.getPlayer();
+        ItemStack item = event.getItem();
+        Game game = plugin.getGameManager().getPlayerGame(player);
+
+        if (game != null && game.getState() == GameState.RUNNING) {
+            Material type = item.getType();
+            // Check if it's a sword, pickaxe, or axe
+            if (type.name().contains("SWORD") || 
+                type.name().contains("PICKAXE") || 
+                type.name().contains("AXE") ||
+                type == Material.SHEARS || // Also make shears unbreakable
+                type == Material.BOW || // And bows
+                type == Material.SHIELD) { // And shields
+                
+                event.setCancelled(true); // Cancel the damage event
+                // Setting damage to 0 ensures it visually doesn't show damage either
+                ItemMeta meta = item.getItemMeta();
+                if (meta instanceof org.bukkit.inventory.meta.Damageable) {
+                    ((org.bukkit.inventory.meta.Damageable) meta).setDamage(0);
+                    item.setItemMeta(meta); // Set the modified meta back
+                }
+            }
+        }
     }
 }

@@ -151,8 +151,6 @@ public class ShopVillager implements Listener {
      * @param event The interaction event (can be null if coming from inventory event)
      */    
     public void handleInteraction(Player player, PlayerInteractEntityEvent event) {
-        plugin.getLogger().info("[ShopVillager] handleInteraction called by " + player.getName() + " for type: " + type.getDisplayName());
-
         // Prevent villager interaction while in edit mode
         if (isEditing) {
             plugin.getLogger().info("[ShopVillager] Interaction cancelled: isEditing is TRUE");
@@ -171,14 +169,10 @@ public class ShopVillager implements Listener {
             player.sendMessage(ChatColor.RED + "You must be in a game to use this!");
             return;
         }
-        plugin.getLogger().info("[ShopVillager] Player is in game: " + game.getGameId());
-
         // Open appropriate menu
         if (type == VillagerType.ITEM_SHOP) {
-            plugin.getLogger().info("[ShopVillager] Opening ITEM_SHOP for " + player.getName());
             plugin.getShopManager().openCategoryMenu(player, ShopCategory.QUICK_BUY);
         } else { // TEAM_UPGRADES
-            plugin.getLogger().info("[ShopVillager] Opening TEAM_UPGRADES for " + player.getName());
             plugin.getTeamUpgradeManager().openUpgradesMenu(player, game);
         }
     }

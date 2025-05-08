@@ -10,6 +10,7 @@ import org.bcnlab.beaconLabsBW.arena.model.TeamData;
 import org.bcnlab.beaconLabsBW.generator.ActiveGenerator;
 import org.bcnlab.beaconLabsBW.utils.MessageUtils;
 import org.bukkit.*;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.type.Bed;
@@ -55,6 +56,7 @@ public class Game {
     // Tasks
     private BukkitTask countdownTask;
     private BukkitTask gameTimerTask;
+    private BukkitTask slowHealTask; // Add task variable
     private int countdown;
     private int gameTimer;
       // Game statistics tracking
@@ -336,8 +338,17 @@ public class Game {
         // Announce game start
         broadcastMessage("&a&lGAME STARTED! &eProtect your bed and destroy other beds!");
         
+        // Disable natural regeneration for the game world
+        World world = Bukkit.getWorld(arena.getWorldName());
+        if (world != null) {
+            world.setGameRule(GameRule.NATURAL_REGENERATION, false); // Keep this false
+            plugin.getLogger().info("[Game " + gameId + "] Set naturalRegeneration to false for world: " + world.getName());
+        }
+        
         // Start game timer
         startGameTimer();
+        // Start slow heal task
+        startSlowHealTask();
     }
     
     /**
@@ -488,14 +499,18 @@ public class Game {
      */
     private void giveInitialEquipment(Player player) {
         // Give a wooden sword by default.
-        // If an ultimate class provides a better sword or replaces it, that logic will handle it.
-        player.getInventory().addItem(new ItemStack(Material.WOODEN_SWORD)); // Re-added
+        ItemStack woodenSword = new ItemStack(Material.WOODEN_SWORD);
+        ItemMeta swordMeta = woodenSword.getItemMeta();
+        if (swordMeta != null) {
+            swordMeta.setUnbreakable(true);
+            swordMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_UNBREAKABLE);
+            woodenSword.setItemMeta(swordMeta);
+        }
+        player.getInventory().addItem(woodenSword); 
         
-        // Give basic wooden tools
-        // player.getInventory().addItem(new ItemStack(Material.WOODEN_PICKAXE)); // Removed
-        // player.getInventory().addItem(new ItemStack(Material.WOODEN_AXE)); // Removed
-        
-        // No more wool blocks at the start - players should buy them from the shop
+        // No initial tools given anymore based on previous request
+        // player.getInventory().addItem(new ItemStack(Material.WOODEN_PICKAXE)); 
+        // player.getInventory().addItem(new ItemStack(Material.WOODEN_AXE));
     }
     
     /**
@@ -1006,6 +1021,10 @@ public class Game {
         if (gameTimerTask != null) {
             gameTimerTask.cancel();
         }
+        if (slowHealTask != null) { // Cancel slow heal task
+             slowHealTask.cancel();
+             plugin.getLogger().info("[Game " + gameId + "] Cancelled slow heal task.");
+        }
           // Stop generators
         for (ActiveGenerator generator : activeGenerators) {
             generator.stop();
@@ -1145,9 +1164,13 @@ public class Game {
         // Clear fire at the very end of cleanup as well
         clearAllFireInArena();
         
-          // Remove dropped items and iron golems (Dream Defenders)
+        // Remove dropped items and iron golems (Dream Defenders)
         World world = Bukkit.getWorld(arena.getWorldName());
         if (world != null) {
+            // Restore natural regeneration (ensure this stays)
+            world.setGameRule(GameRule.NATURAL_REGENERATION, true);
+            plugin.getLogger().info("[Game " + gameId + "] Restored naturalRegeneration to true for world: " + world.getName());
+            
             for (Entity entity : world.getEntities()) {
                 if (entity instanceof Item) {
                     entity.remove();
@@ -2044,6 +2067,36 @@ public class Game {
             }
         }
         player.getInventory().setContents(contents);
+    }
+
+    // Add method to start the slow heal task
+    private void startSlowHealTask() {
+        if (slowHealTask != null) {
+            slowHealTask.cancel();
+        }
+        
+        slowHealTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (state != GameState.RUNNING) {
+                    cancel(); // Stop task if game isn't running
+                    return;
+                }
+                
+                for (UUID playerId : players) {
+                    Player player = Bukkit.getPlayer(playerId);
+                    if (player != null && !isSpectator(player) && player.getGameMode() == org.bukkit.GameMode.SURVIVAL) {
+                        // double maxHealth = player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue(); // Old way
+                        double maxHealth = player.getMaxHealth(); // Use getMaxHealth() for broader compatibility
+                        if (player.getHealth() < maxHealth) {
+                            // Heal by 1 health point (half a heart)
+                            player.setHealth(Math.min(player.getHealth() + 1.0, maxHealth));
+                        }
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, 100L, 100L); // Run every 10 seconds (200 ticks)
+        plugin.getLogger().info("[Game " + gameId + "] Started slow heal task.");
     }
 }
 
